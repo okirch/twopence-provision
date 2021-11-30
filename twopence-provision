@@ -41,6 +41,8 @@ def load_config(topology, bom):
 
 	if bom.status:
 		topology.setStatusPath(args.status)
+	if bom.logspace:
+		topology.logspace = bom.logspace
 
 def action_init(args):
 	workspace = args.workspace

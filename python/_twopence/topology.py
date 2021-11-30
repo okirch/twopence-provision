@@ -72,6 +72,7 @@ class TopologyStatus:
 
 			self._backend = None
 			self._testcase = None
+			self._logspace = None
 			self._nodes = {}
 
 		self.tree = self.data.tree()
@@ -85,6 +86,7 @@ class TopologyStatus:
 		self._backend = self.tree.get_value("backend")
 		self._testcase = self.tree.get_value("testcase")
 		self._workspace = self.tree.get_value("workspace")
+		self._logspace = self.tree.get_value("logspace")
 
 		self._nodes = {}
 		for name in self.tree.get_children("node"):
@@ -119,6 +121,16 @@ class TopologyStatus:
 		if self._workspace != value:
 			self.tree.set_value("workspace", value)
 			self._workspace = value
+
+	@property
+	def logspace(self):
+		return self._logspace
+
+	@logspace.setter
+	def logspace(self, value):
+		if self._logspace != value:
+			self.tree.set_value("logspace", value)
+			self._logspace = value
 
 	@property
 	def nodes(self):
@@ -258,6 +270,7 @@ class TestTopology:
 		self.repositories = []
 		self.testcase = None
 		self.workspaceRoot = None
+		self.logspace = None
 		self.platform = None
 		self.persistentState = None
 		self.persistentStatePath = None
@@ -330,16 +343,7 @@ class TestTopology:
 		if self.persistentState:
 			self.persistentState.backend = self.backend.name
 			self.persistentState.testcase = self.testcase
-
-			# This is not ideal, because we're polluting the workspace
-			# used for managing the VMs with other files, such as
-			# logs or formatted test reports.
-			if False:
-				runPath = os.path.join(self.workspace, "run")
-				if not os.path.isdir(runPath):
-					os.makedirs(runPath)
-				self.persistentState.workspace = runPath
-
+			self.persistentState.logspace = self.logspace
 			self.persistentState.save()
 
 	def cleanupStatus(self):
