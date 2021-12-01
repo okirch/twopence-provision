@@ -238,6 +238,7 @@ class TestTopology:
 
 		self.testcase = config.testcase
 		self.workspace = config.workspace
+		self.logspace = config.logspace
 		self.persistentStatePath = config.status
 
 		for node in config.nodes:
