@@ -51,6 +51,9 @@ class GenericInstance:
 		self.running = False
 		self.networkInterfaces = []
 
+		if self.persistent:
+			instanceConfig.persistInfo(self.persistent)
+
 	def addNetworkInterface(self, af, address, prefix_len = None):
 		af = int(af)
 
@@ -156,6 +159,12 @@ class InstanceConfig:
 
 	def enableFeatures(self, name_list):
 		self.features += name_list
+
+	def persistInfo(self, nodePersist):
+		nodePersist.features = self.features
+		if self.platform:
+			nodePersist.vendor = self.platform.vendor
+			nodePersist.os = self.platform.os
 
 	def processTemplate(self, templatePath, outputPath, extraCommands = []):
 		print("Creating %s from %s" % (outputPath, templatePath))

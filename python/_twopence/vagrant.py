@@ -220,9 +220,6 @@ class VagrantBackend(Backend):
 
 		instanceConfig.processTemplate(self.template, path, extraCommands)
 
-		if savedInstanceState:
-			savedInstanceState.set_features(instanceConfig.features)
-
 		return VagrantInstance(instanceConfig, instanceWorkspace, savedInstanceState)
 
 	def startInstance(self, instance):

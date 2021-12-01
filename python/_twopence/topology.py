@@ -24,6 +24,8 @@ class TopologyStatus:
 			self._ipv4_address = config.get_value("ipv4_address")
 			self._ipv6_address = config.get_value("ipv6_address")
 			self._features = config.get_values("features")
+			self._vendor = config.get_value("vendor")
+			self._os = config.get_value("os")
 
 		@property
 		def ipv4_address(self):
@@ -45,16 +47,42 @@ class TopologyStatus:
 				self._config.set_value("ipv6_address", value)
 				self._ipv6_address = value
 
+		@property
+		def features(self):
+			return self._features
+
+		@features.setter
+		def features(self, value):
+			if self._features != value:
+				self._config.set_value("features", value)
+				self._features = value
+
+		@property
+		def vendor(self):
+			return self._vendor
+
+		@vendor.setter
+		def vendor(self, value):
+			if self._vendor != value:
+				self._config.set_value("vendor", value)
+				self._vendor = value
+
+		@property
+		def os(self):
+			return self._os
+
+		@os.setter
+		def os(self, value):
+			if self._os != value:
+				self._config.set_value("os", value)
+				self._os = value
+
 		def clearNetwork(self):
 			self.ipv4_address = None
 			self.ipv6_address = None
 
 		def set_value(self, name, value):
 			self._config.set_value(name, value)
-
-		def set_features(self, names):
-			self._features = names
-			self._config.set_value('features', names)
 
 	def __init__(self, pathname):
 		self.path = pathname
@@ -197,6 +225,8 @@ class TestTopology:
 			self.keyfile = None
 			self.repositories = {}
 			self.features = []
+			self.vendor = []
+			self.os = []
 
 		def configure(self, config):
 			if not config:
@@ -206,6 +236,8 @@ class TestTopology:
 			self.update_value(config, 'keyfile')
 			self.update_value(config, 'keyfile', 'ssh-keyfile')
 			self.update_list(config, 'features')
+			self.update_value(config, 'vendor')
+			self.update_value(config, 'os')
 
 			for name in config.get_children("repository"):
 				child = config.get_child("repository", name)
