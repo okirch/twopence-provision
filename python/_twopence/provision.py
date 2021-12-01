@@ -9,6 +9,33 @@
 #
 ##################################################################
 
+class Packager:
+	@classmethod
+	def forPlatform(klass, vendor, os):
+		if vendor == "suse":
+			return Zypper()
+
+		raise NotImplementedError("No packager for %s/%s" % (vendor, os))
+
+	def importGpgKey(self, keyfile):
+		raise NotImplementedError()
+
+	def enableRepository(self, url, name):
+		raise NotImplementedError()
+
+	def installPackages(self, pkg_list):
+		raise NotImplementedError()
+
+class Zypper(Packager):
+	def importGpgKey(self, keyfile):
+		return "rpm --import " + keyfile
+
+	def enableRepository(self, url, name):
+		return "zypper ar %s %s" % (url, name)
+
+	def installPackages(self, pkg_list):
+		return "zypper in -y " + " ".join(pkg_list)
+
 class Provisioner:
 	def processTemplate(self, nodeConfig, templatePath, outputPath, extraCommands = []):
 		print("Creating %s from %s" % (outputPath, templatePath))
@@ -61,6 +88,8 @@ class Provisioner:
 			outf.write(output)
 
 	def nodeConfigAsDict(self, nodeConfig, list_sepa = " "):
+		packager = Packager.forPlatform(nodeConfig.vendor, nodeConfig.os)
+
 		d = {}
 
 		d['NAME'] = nodeConfig.name
@@ -86,15 +115,16 @@ class Provisioner:
 				keyfile = "%s/repodata/repomd.xml.key" % repo.url
 
 			if keyfile.startswith("http:") or keyfile.startswith("https:"):
-				cmdlist.append("rpm --import " + keyfile)
+				cmdlist.append(packager.importGpgKey(keyfile))
 			else:
 				raise NotImplementedError("Cannot upload keyfile to instance")
 
-			cmdlist.append("zypper ar %s %s" % (repo.url, repo.name))
+			cmdlist.append(packager.enableRepository(repo.url, repo.name))
+
 		d['ADD_REPOSITORIES'] = cmdlist
 
 		if nodeConfig.install:
-			d['INSTALL_PACKAGES'] = "zypper in -y " + " ".join(nodeConfig.install)
+			d['INSTALL_PACKAGES'] = packager.installPackages(nodeConfig.install)
 		else:
 			d['INSTALL_PACKAGES'] = ""
 

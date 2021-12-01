@@ -60,8 +60,8 @@ class Platform(Configurable):
 		self.keyfile = None
 		self.repositories = {}
 		self.features = []
-		self.vendor = []
-		self.os = []
+		self.vendor = None
+		self.os = None
 
 	def configure(self, config):
 		if not config:
@@ -333,6 +333,9 @@ class Config(Configurable):
 
 	def finalizeNode(self, node):
 		platform = self.platformForRole(node.role)
+
+		if not platform.vendor or not platform.os:
+			raise ConfigError("Node %s uses platform %s, which lacks a vendor and os definition" % (platform.name, node.name))
 
 		result = FinalNodeConfig(node, platform)
 
