@@ -41,19 +41,3 @@ class ProgressBar:
 			print(" %s" % msg)
 			self.printed = False
 
-
-class Configurable:
-	def update_value(self, config, attr_name, config_key = None):
-		if config_key is None:
-			config_key = attr_name
-		value = config.get_value(config_key)
-		if value is not None:
-			setattr(self, attr_name, value)
-
-	def update_list(self, config, attr_name):
-		# get_values may return None or []
-		value = config.get_values(attr_name)
-		if value:
-			current = getattr(self, attr_name)
-			assert(type(current) == list)
-			setattr(self, attr_name, current + value)

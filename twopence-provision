@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 from _twopence.provision import *
-from _twopence.provision.util import Configurable
 
 global_config_paths	= [
 	"/etc/twopence/twopence.conf",
@@ -19,30 +18,25 @@ def create_topology(args):
 		raise ValueError("Failed to load BOM from %s" % bom.path)
 
 	backend = Backend.create(bom.backend)
+	config = load_config(bom)
 
-	topology = TestTopology(backend, workspace = args.workspace)
-
-	load_config(topology, bom)
-
-	topology.validateConfig()
-
+	topology = TestTopology(backend, config = config, workspace = args.workspace)
 	return topology
 
-def load_config(topology, bom):
+def load_config(bom):
+	config = Config(bom.workspace)
+
+	config.status = bom.status
+	config.logspace = bom.logspace
+
 	for path in global_config_paths:
-		topology.loadConfig(path)
+		config.load(path)
 
-	for configPath in bom.config:
-		if configPath.startswith('nodes:'):
-			# parse an old-style nodes file
-			topology.loadNodeFile(configPath[6:])
-		else:
-			topology.loadConfig(configPath)
+	for path in bom.config:
+		config.load(path)
 
-	if bom.status:
-		topology.setStatusPath(args.status)
-	if bom.logspace:
-		topology.logspace = bom.logspace
+	config.validate()
+	return config
 
 def action_init(args):
 	workspace = args.workspace

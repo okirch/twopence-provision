@@ -8,10 +8,11 @@
 import os
 
 from .logging import *
-from .util import Configurable
+from .backend import Backend
 from .runner import Runner
 from .instance import *
-from _twopence.provision import Backend
+from .provision import *
+from .config import Config
 
 class VagrantInstance(GenericInstance):
 	def setStateFromVagrantStatus(self, raw_status):
@@ -38,6 +39,7 @@ class VagrantBackend(Backend):
 
 		self.template = None
 		self.runner = Runner()
+		self.provisioner = Provisioner()
 
 	def configure(self, config):
 		self.update_value(config, 'template')
@@ -57,7 +59,7 @@ class VagrantBackend(Backend):
 			if any(instance.name == savedInstanceState.name for instance in found):
 				continue
 
-			dummy = InstanceConfig(savedInstanceState.name)
+			dummy = Config.createEmptyNode(savedInstanceState.name)
 			instance = self.detectInstance(workspace, dummy, savedInstanceState)
 			if instance:
 				found.append(instance)
@@ -69,7 +71,9 @@ class VagrantBackend(Backend):
 
 		debug("detectInstance(%s)" % instanceConfig.name)
 		instanceWorkspace = os.path.join(workspace, instanceConfig.name)
-		if not os.path.isdir(instanceWorkspace):
+
+		magic_path = os.path.join(instanceWorkspace, ".vagrant")
+		if not os.path.isdir(magic_path):
 			return None
 
 		debug("Instance %s: workspace exists" % instanceConfig.name)
@@ -94,6 +98,14 @@ class VagrantBackend(Backend):
 			raise ValueError("Cannot prepare vagrant instance - no template defined")
 
 		instanceWorkspace = os.path.join(workspace, instanceConfig.name)
+
+		# If the instance workspace exists already, we should fail.
+		# However, it may be a leftover from an aborted attempt.
+		# Try to be helpful and remove the workspace IFF it is empty
+		if os.path.isdir(instanceWorkspace):
+			try:	os.rmdir(instanceWorkspace)
+			except: pass
+
 		if os.path.isdir(instanceWorkspace):
 			raise ValueError("workspace %s already exists" % instanceWorkspace)
 
@@ -108,7 +120,7 @@ class VagrantBackend(Backend):
 #			"rm -f /etc/twopence/twopence.conf",
 		]
 
-		instanceConfig.processTemplate(self.template, path, extraCommands)
+		self.provisioner.processTemplate(instanceConfig, self.template, path, extraCommands)
 
 		return VagrantInstance(instanceConfig, instanceWorkspace, savedInstanceState)
 
