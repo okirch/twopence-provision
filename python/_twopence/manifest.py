@@ -39,7 +39,7 @@ class BOM:
 
 	def load(self):
 		self.data = curly.Config(self._path)
-		debug("Loaded status from %s" % self.path)
+		debug("Loaded BOM from %s" % self.path)
 
 		tree = self.data.tree()
 

@@ -293,7 +293,7 @@ class TestTopology:
 			self.update_list(config, 'start')
 
 	def __init__(self, backend, workspace = None):
-		self.backend = None
+		self.backend = backend
 		self.workspace = workspace
 
 		self.platforms = {}
@@ -310,11 +310,6 @@ class TestTopology:
 
 		self.instanceConfigs = []
 		self.instances = []
-
-		self.postponedBackendConfigs = []
-
-		if backend:
-			self.setBackend(backend)
 
 		self._valid = False
 
@@ -342,23 +337,9 @@ class TestTopology:
 		if testcase:
 			self.testcase = testcase
 
-		if self.backend:
-			child = tree.get_child("backend", self.backend.name)
-			if child:
-				self.backend.configure(child)
-		else:
-			self.postponedBackendConfigs.append(tree)
-
-	def setBackend(self, backend):
-		assert(self.backend is None)
-
-		for config in self.postponedBackendConfigs:
-			child = config.get_child("backend", backend.name)
-			if child:
-				backend.configure(config)
-		self.postponedBackendConfigs = []
-
-		self.backend = backend
+		child = tree.get_child("backend", self.backend.name)
+		if child:
+			self.backend.configure(child)
 
 	def setStatusPath(self, pathname):
 		self.persistentStatePath = pathname
@@ -448,14 +429,6 @@ class TestTopology:
 		self.instances = []
 
 		status = self.loadStatus()
-
-		if self.backend is None:
-			backendName = status.backend
-			if backendName is None:
-				return
-
-			verbose("Detected backend %s" % backendName)
-			self.setBackend(Backend.create(backendName))
 
 		if self.testcase is None:
 			self.testcase = status.testcase
