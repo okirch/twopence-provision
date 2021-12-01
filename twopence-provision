@@ -55,7 +55,7 @@ def action_init(args):
 	bom.save()
 
 	try:
-		topology = create_topology(bom)
+		config = load_config(bom)
 	except ConfigError as e:
 		print("Error: the resulting configuration is not valid")
 		print(e)
@@ -137,7 +137,7 @@ def action_show(args):
 	topology = create_topology(args)
 	for type in args.info_type:
 		if type == 'status-file':
-			st = topology.loadStatus()
+			st = topology.persistentState
 			print(st.path or "")
 		else:
 			raise ValueError("Unsupported info-type \"%s\"" % type)

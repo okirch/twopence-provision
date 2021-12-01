@@ -224,12 +224,14 @@ class TestTopology:
 		if not os.path.isdir(self.workspace):
 			os.makedirs(self.workspace)
 
-		status = self.loadStatus()
+		# Attach persistent state (and load it if it exists)
+		path = self.persistentStatePath
+		if path is None:
+			path = os.path.join(self.workspace, "status.conf")
+		self.persistentState = TopologyStatus(path)
 
-		status.backend = self.backend.name
-		status.testcase = self.testcase
-		status.save()
-
+		# Write back persistent state if it does not exist.
+		self.saveStatus()
 
 	def configure(self, config):
 		config.validate()
@@ -242,45 +244,6 @@ class TestTopology:
 			self.createInstanceConfig(node, config)
 
 		config.configureBackend(self.backend)
-
-	def loadConfig(self, filename):
-		if not os.path.exists(filename):
-			return
-
-		config = curly.Config(filename)
-
-		tree = config.tree()
-
-		self.platformsFromConfig(tree)
-		self.rolesFromConfig(tree)
-		self.nodesFromConfig(tree)
-
-		workspaceRoot = tree.get_value('workspace-root')
-		if workspaceRoot:
-			self.workspaceRoot = workspaceRoot
-
-		workspace = tree.get_value('workspace')
-		if workspace:
-			self.workspace = workspace
-
-		testcase = tree.get_value('testcase')
-		if testcase:
-			self.testcase = testcase
-
-		child = tree.get_child("backend", self.backend.name)
-		if child:
-			self.backend.configure(child)
-
-	def setStatusPath(self, pathname):
-		self.persistentStatePath = pathname
-
-	def loadStatus(self):
-		if not self.persistentState:
-			path = self.persistentStatePath
-			if path is None:
-				path = os.path.join(self.workspace, "status.conf")
-			self.persistentState = TopologyStatus(path)
-		return self.persistentState
 
 	def saveStatus(self):
 		if self.persistentState:
