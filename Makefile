@@ -16,5 +16,5 @@ install:
 	mkdir -p $(DESTDIR)$(TWP_PYDIR)
 	install -m 555 twopence-provision $(DESTDIR)$(TWP_BINDIR)/provision
 	install -m 644 provision.conf $(DESTDIR)$(TWP_ETCDIR)
-	install -m 444 Vagrantfile.in $(DESTDIR)$(TWP_LIBDIR)
+	install -m 444 templates/Vagrantfile.in $(DESTDIR)$(TWP_LIBDIR)
 	cp -vr python/_twopence/* $(DESTDIR)$(TWP_PYDIR)
