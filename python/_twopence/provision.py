@@ -9,6 +9,8 @@
 #
 ##################################################################
 
+from .config import ConfigError
+
 class Packager:
 	@classmethod
 	def forPlatform(klass, vendor, os):
@@ -95,6 +97,8 @@ class Provisioner:
 		d['NAME'] = nodeConfig.name
 		d['HOSTNAME'] = nodeConfig.name
 		d['PLATFORM'] = nodeConfig.platform.name
+		d['VENDOR'] = nodeConfig.platform.vendor
+		d['OS'] = nodeConfig.platform.OS
 		d['IMAGE'] = nodeConfig.image or ""
 		d['KEYFILE'] = nodeConfig.keyfile or ""
 		d['REPOSITORIES'] = list_sepa.join(repo.url for repo in nodeConfig.repositories)
@@ -130,4 +134,14 @@ class Provisioner:
 
 		d['COMMANDS'] = []
 
+		self.extraInfoToDict(d, nodeConfig.info, "info")
+		self.extraInfoToDict(d, nodeConfig.platform.info, "platform_info")
+
 		return d
+
+	def extraInfoToDict(self, d, info, prefix):
+		if not info:
+			return
+		for key, value in info.items():
+			key = "%s_%s" % (prefix, key)
+			d[key.upper()] = value

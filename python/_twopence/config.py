@@ -37,6 +37,43 @@ class Configurable:
 			assert(type(current) == list)
 			setattr(self, attr_name, current + value)
 
+class ExtraInfo:
+	def __init__(self):
+		self.data = {}
+
+	# Config files can specify opaque bits of info that can be referenced
+	# in template files. Example:
+	#
+	#	info "registration" {
+	#		email "Olaf.Kirch@suse.com";
+	#		regcode "INTERNAL-USE-ONLY-0000-0000";
+	#	}
+	#
+	# We stow these in the info dict with keys registration_email
+	# and registration_regcode. Template files can reference these.
+	# Information from a global info {} group is provided using
+	# the prefix "INFO_", while data from an info group nested within
+	# a platform is provided with a prefix of "PLATFORM_INFO_".
+	#
+	# So if the above info group is global, a Vagrantfile template
+	# would reference them as @INFO_REGISTRATION_EMAIL@ and
+	# @INFO_REGISTRATION_REGCODE@, # respectively.
+	def configure(self, config):
+		for name in config.get_children("info"):
+			child = config.get_child("info", name)
+
+			for attr_name in child.get_attributes():
+				values = child.get_values(attr_name)
+				if not values:
+					values = [""]
+
+				info_name = "info_%s_%s" % (name, attr_name)
+				self.info[attr_name] = values[0]
+				self.info[attr_name + "_list"] = values
+
+	def items(self):
+		return self.data.items()
+
 class Repository(Configurable):
 	def __init__(self, name):
 		self.name = name
@@ -63,6 +100,8 @@ class Platform(Configurable):
 		self.vendor = None
 		self.os = None
 
+		self.info = ExtraInfo()
+
 	def configure(self, config):
 		if not config:
 			return
@@ -81,6 +120,9 @@ class Platform(Configurable):
 			repo.configure(child)
 
 			# print("Platform %s provides repo %s at %s" % (self.name, repo.name, repo.url))
+
+		# Extract info "blah" { ... } groups from the platform config.
+		self.info.configure(config)
 
 	def __str__(self):
 		return "Platform(%s, image=%s)" % (self.name, self.image)
@@ -125,9 +167,6 @@ class Node(Configurable):
 		self.install = []
 		self.start = []
 
-		# fields set in finalize()
-		self._platform = None
-
 	def configure(self, config):
 		if not config:
 			return
@@ -148,6 +187,7 @@ class EmptyNodeConfig:
 		self.install = []
 		self.start = []
 		self.features = []
+		self.info = None
 
 	@property
 	def image(self):
@@ -203,13 +243,14 @@ class EmptyNodeConfig:
 			nodePersist.os = self.platform.os
 
 class FinalNodeConfig(EmptyNodeConfig):
-	def __init__(self, node, platform):
+	def __init__(self, node, platform, global_info):
 		super().__init__(node.name)
 
 		self.platform = platform
 		self.install += node.install
 		self.start += node.start
 		self.features += platform.features
+		self.info = global_info
 
 class SavedBackendConfig:
 	def __init__(self, name, config):
@@ -228,6 +269,8 @@ class Config(Configurable):
 		self._roles = {}
 		self._nodes = {}
 		self._repositories = []
+
+		self.info = ExtraInfo()
 
 		self.defaultRole = self.createRole("default")
 
@@ -254,6 +297,9 @@ class Config(Configurable):
 		for name in tree.get_children("backend"):
 			child = tree.get_child("backend", name)
 			self.backends.append(SavedBackendConfig(name, child))
+
+		# Extract data from global info "blah" { ... } groups
+		self.info.configure(tree)
 
 	def validate(self):
 		if self._valid:
@@ -337,7 +383,7 @@ class Config(Configurable):
 		if not platform.vendor or not platform.os:
 			raise ConfigError("Node %s uses platform %s, which lacks a vendor and os definition" % (platform.name, node.name))
 
-		result = FinalNodeConfig(node, platform)
+		result = FinalNodeConfig(node, platform, self.info)
 
 		role = self.getRole("default")
 		if role:
