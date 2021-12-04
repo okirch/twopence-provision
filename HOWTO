@@ -1,0 +1,48 @@
+
+
+Building a silver image
+
+	Example: SLES15-SP3 plus selinux
+
+	twopence provision --workspace ~/susetest init
+	twopence provision --workspace ~/susetest build selinux
+	rm -rf ~/susetest
+
+	This loads a build.conf file from /usr/lib/twopence/provision/selinux,
+	and provisions a build node using the base platform. The base platform
+	is defined in build.conf.
+
+	For the time being, bring-up and building is rolled into one;
+	the entire process is coded in selinux/Vagrantfile
+
+	The result of the build process is a vagrant image that
+	is placed in ~/.twopence, along with some meta data that allows
+	the twopence provisioner to pick it up later.
+
+	The above build command would build a vagrant image that
+	is based on SLES15-SP3, and has selinux enabled. The resulting
+	image can be referenced by specifying "selinux-runtime-15.3" as
+	platform.
+
+Provisioning a test cluster
+
+	Example: run the rpc test case
+
+	Create a file named testrun.conf with the following content:
+
+	  role "default" {
+		platform	"selinux-runtime-15.3";
+		repositories	"testbus";
+	  }
+
+	This specifies the default configuration for all nodes (you can specify
+	different platforms for each node, or each role). Incidentally, this will
+	use the image created just above.
+
+	twopence provision --workspace ~/susetest init \
+		--config testrun.conf --config /usr/lib/twopence/rpc/testcase.conf
+	twopence provision --workspace ~/susetest create
+
+	/usr/lib/twopence/rpc/run --config ~/susetest/status.conf
+
+	twopence provision --workspace ~/susetest destroy

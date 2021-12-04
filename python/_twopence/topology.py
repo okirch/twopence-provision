@@ -271,6 +271,10 @@ class TestTopology:
 
 		success = True
 		for instanceConfig in self.instanceConfigs:
+			if not self.backend.downloadImage(self.workspace, instanceConfig):
+				raise ValueError("Failed to download image for instance %s" % instanceConfig.name)
+
+		for instanceConfig in self.instanceConfigs:
 			instance = self.backend.prepareInstance(self.workspace, instanceConfig,
 						self.persistentState.createNodeState(instanceConfig.name))
 			if instance.exists:
@@ -312,7 +316,10 @@ class TestTopology:
 			try:
 				success = self.backend.startInstance(instance)
 			except Exception as e:
+				import traceback
+
 				print("Caught exception while trying to start instance: %s" % e)
+				traceback.print_exc()
 				success = False
 
 			if not success:
@@ -320,6 +327,7 @@ class TestTopology:
 				break
 
 			instance.exists = True
+			instance.running = True
 
 			self.backend.updateInstanceTarget(instance)
 
@@ -333,6 +341,13 @@ class TestTopology:
 			self.backend.updateInstanceTarget(instance)
 
 			self.saveStatus()
+
+	def package(self, nodeName):
+		instance = self.getInstance(nodeName)
+		if instance is None:
+			raise ValueError("Cannot package %s: instance not found" % nodeName)
+
+		return self.backend.packageInstance(instance)
 
 	def destroy(self):
 		for instance in self.instances:
@@ -352,6 +367,12 @@ class TestTopology:
 		# and possibly copies of some config files
 
 	def createInstanceConfig(self, node, config):
-		nodeConfig = config.finalizeNode(node)
+		nodeConfig = config.finalizeNode(node, self.backend)
 		self.instanceConfigs.append(nodeConfig)
 		return nodeConfig
+
+	def getInstance(self, name):
+		for instance in self.instances:
+			if instance.name == name:
+				return instance
+		return None

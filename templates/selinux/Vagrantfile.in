@@ -1,87 +1,45 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
+# Template for Vagrantfile to provision a (SUSE based) silver image with selinux
+# enablement
 
-# All Vagrant configuration is done below. The "2" in Vagrant.configure
-# configures the configuration version (we support older styles for
-# backwards compatibility). Please don't change it unless you know what
-# you're doing.
+# TBD: based on the requirements, change how we provision.
+# E.g. if the requirements include "suse-registration", provisioning should
+# perform the SUSEConnect dance.
+requires = Array[
+	"@REQUIRES@",
+]
+
 Vagrant.configure("2") do |config|
-  # The most common configuration options are documented and commented below.
-  # For a complete reference, please see the online documentation at
-  # https://docs.vagrantup.com.
+  config.vm.box = "@IMAGE@"
 
-  # Every Vagrant development environment requires a box. You can search for
-  # boxes at https://vagrantcloud.com/search.
-  config.vm.box = "SLES15-SP3"
-
-  # Disable automatic box update checking. If you disable this, then
-  # boxes will only be checked for updates when the user runs
-  # `vagrant box outdated`. This is not recommended.
-  # config.vm.box_check_update = false
-
-  # Create a forwarded port mapping which allows access to a specific port
-  # within the machine from a port on the host machine. In the example below,
-  # accessing "localhost:8080" will access port 80 on the guest machine.
-  # NOTE: This will enable public access to the opened port
-  # config.vm.network "forwarded_port", guest: 80, host: 8080
-
-  # Create a forwarded port mapping which allows access to a specific port
-  # within the machine from a port on the host machine and only allow access
-  # via 127.0.0.1 to disable public access
-  # config.vm.network "forwarded_port", guest: 80, host: 8080, host_ip: "127.0.0.1"
-
-  # Create a private network, which allows host-only access to the machine
-  # using a specific IP.
-  # config.vm.network "private_network", ip: "192.168.33.10"
-
-  # Create a public network, which generally matched to bridged network.
-  # Bridged networks make the machine appear as another physical device on
-  # your network.
-  # config.vm.network "public_network"
-
-  # Share an additional folder to the guest VM. The first argument is
-  # the path on the host to the actual folder. The second argument is
-  # the path on the guest to mount the folder. And the optional third
-  # argument is a set of non-required options.
-  # config.vm.synced_folder "../data", "/vagrant_data"
-
-  # Provider-specific configuration so you can fine-tune various
-  # backing providers for Vagrant. These expose provider-specific options.
-  # Example for VirtualBox:
-  #
-  # config.vm.provider "virtualbox" do |vb|
-  #   # Display the VirtualBox GUI when booting the machine
-  #   vb.gui = true
-  #
-  #   # Customize the amount of memory on the VM:
-  #   vb.memory = "1024"
-  # end
-  #
-  # View the documentation for the provider you are using for more
-  # information on available options.
-
-  # Enable provisioning with a shell script. Additional provisioners such as
-  # Ansible, Chef, Docker, Puppet and Salt are also available. Please see the
-  # documentation for more information about their specific syntax and use.
   config.vm.provision "shell", inline: <<-SHELL
-     SUSEConnect -r INTERNAL-USE-ONLY-b71b-70b9 -e Olaf.Kirch@suse.com
-     SUSEConnect -p sle-module-desktop-applications/15.3/x86_64
-     SUSEConnect -p sle-module-development-tools/15.3/x86_64
-     SUSEConnect --list-extensions
+     os="@OS@"
+     arch="@ARCH@"
+
+     case $os in
+     SLES15-SP3)
+	ibs_build_target=SLE_15_SP3
+	sle_module_version=15.3
+	: ;;
+     esac
+
+     case $os in
+     SLE*)
+	SUSEConnect -r "@INFO_REGISTRATION_REGCODE@" -e "@INFO_REGISTRATION_EMAIL@"
+	SUSEConnect -p sle-module-desktop-applications/$sle_module_version/$arch
+	SUSEConnect -p sle-module-development-tools/$sle_module_version/$arch
+	SUSEConnect --list-extensions
+	: ;;
+     esac
 
      zypper -n in -y wget strace
 
-     zypper -n addrepo https://download.opensuse.org/repositories/openSUSE:infrastructure/SLE_15_SP3/openSUSE:infrastructure.repo
+     zypper -n addrepo https://download.opensuse.org/repositories/openSUSE:infrastructure/$ibs_build_target/openSUSE:infrastructure.repo
      zypper -n refresh
      zypper -n --gpg-auto-import-keys install ca-certificates-suse
 
-     repo=https://download.suse.de/ibs/SUSE:/SLE-15-SP3:/Update:/Products:/MicroOS51/standard/noarch
-     # wget --no-check-certificate $repo/selinux-policy{,-minimum,-targeted}-20210716-3.3.noarch.rpm
-
-     # rpm --nodeps -ivh selinux-policy-2*rpm
-     # rpm --nodeps -ivh selinux-policy-mimimum*rpm
-
-     zypper -n ar --no-gpgcheck https://download.suse.de/ibs/home:/okir:/selinux/SLE_15_SP3 selinux
+     zypper -n ar --no-gpgcheck https://download.suse.de/ibs/home:/okir:/selinux/$ibs_build_target selinux
      zypper -n up -y --allow-vendor-change libselinux1 selinux-tools
      zypper -n in -y --allow-vendor-change checkpolicy policycoreutils restorecond
      zypper -n in -y --allow-vendor-change selinux-policy-targeted selinux-autorelabel

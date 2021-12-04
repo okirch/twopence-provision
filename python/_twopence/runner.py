@@ -6,8 +6,43 @@
 #
 ##################################################################
 
-
+import subprocess
+import time
 from .util import ProgressBar
+
+class CommandTimeout(Exception):
+	pass
+
+class Alarm:
+	active = None
+
+	def __init__(self, timeout):
+		from signal import alarm, signal, SIGALRM, SIG_DFL
+
+		self._alarm = alarm
+		signal(SIGALRM, self.alarm_handler)
+
+		if timeout:
+			self.setAlarm(timeout)
+
+	def __del__(self):
+		self.cancel()
+
+	@staticmethod
+	def alarm_handler(*args):
+		Alarm.active = None
+		raise CommandTimeout()
+
+	def setAlarm(self, timeout):
+		assert(Alarm.active is None)
+		Alarm.active = self
+
+		self._alarm(int(timeout))
+
+	def cancel(self):
+		if Alarm.active == self:
+			self._alarm(0)
+			Alarm.active = None
 
 class ExecStatus:
 	RUNNING = 0
@@ -15,14 +50,17 @@ class ExecStatus:
 	EXITED = 2
 	CRASHED = 3
 
-	def __init__(self, how, exit_code = None, output = None):
+	def __init__(self, how, exit_code = None, output = ""):
 		self.how = how
 
 		if how != self.EXITED:
 			exit_code = None
 		self.exit_code = exit_code
 
-		self.output = output
+		if type(output) == str:
+			self.output = output.split("\n")
+		else:
+			self.output = output
 
 	@classmethod
 	def timedOut(klass, *args, **kwargs):
@@ -47,18 +85,50 @@ class ExecStatus:
 
 		return "UNKNOWN"
 
-	@property
-	def output_lines(self):
-		if self.output is None:
-			return []
-		return self.output.split("\n")
-
-
 class Runner:
 	def run(self, command, cwd = None, timeout = 10, quiet = False):
-		import subprocess
-		import time
+		if cwd:
+			print("Executing \"%s\" in directory %s" % (command, cwd))
+		else:
+			print("Executing \"%s\"" % command)
 
+		p = subprocess.Popen(command,
+				cwd = cwd,
+				encoding = "utf8",
+				stdout = subprocess.PIPE,
+				stderr = subprocess.STDOUT,
+				shell = True,
+				bufsize = 0)
+
+		startTime = time.time()
+		alarm = Alarm(timeout)
+		output = []
+
+		while p.poll() is None:
+			try:
+				l = p.stdout.readline().strip()
+				if not quiet:
+					if len(output) == 0:
+						print("Command output:")
+
+					print("[%s] %s" % (self.formatTimestamp(startTime), l))
+				output.append(l)
+			except CommandTimeout:
+				print("[%s] Command Timed Out." % (self.formatTimestamp(startTime), ))
+				p.kill()
+				return ExecStatus.timedOut(output)
+
+		alarm.cancel()
+
+		return ExecStatus.exited(p.returncode, output)
+
+	def formatTimestamp(self, since):
+		elapsed = time.time() - since
+		minutes = int(elapsed / 60)
+		seconds = elapsed - minutes * 60
+		return "%02u:%05.2f" % (minutes, seconds)
+
+	def runOld(self, command, cwd = None, timeout = 10, quiet = False):
 		progress = ProgressBar("Waiting for command to complete")
 		if quiet:
 			progress.disable()

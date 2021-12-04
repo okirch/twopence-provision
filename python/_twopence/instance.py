@@ -6,6 +6,7 @@
 #
 ##################################################################
 
+from .logging import *
 import time
 import os
 
@@ -120,7 +121,8 @@ class GenericInstance:
 			print("%s %s" % (time.ctime(), status), file = f)
 			if status.output:
 				print("Command output follows", file = f)
-				f.write(status.output)
+				for line in status.output:
+					print(line, file = f)
 
 	def openLog(self, filename):
 		path = os.path.join(self.workspace, filename)

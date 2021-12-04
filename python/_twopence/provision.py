@@ -9,7 +9,9 @@
 #
 ##################################################################
 
+import os
 from .config import ConfigError
+from .logging import *
 
 class Packager:
 	@classmethod
@@ -40,6 +42,9 @@ class Zypper(Packager):
 
 class Provisioner:
 	def processTemplate(self, nodeConfig, templatePath, outputPath, extraCommands = []):
+		if not templatePath.startswith('/'):
+			templatePath = os.path.join("/usr/lib/twopence/provision", templatePath)
+
 		print("Creating %s from %s" % (outputPath, templatePath))
 
 		data = self.nodeConfigAsDict(nodeConfig)
@@ -98,12 +103,15 @@ class Provisioner:
 		d['HOSTNAME'] = nodeConfig.name
 		d['PLATFORM'] = nodeConfig.platform.name
 		d['VENDOR'] = nodeConfig.platform.vendor
-		d['OS'] = nodeConfig.platform.OS
+		d['OS'] = nodeConfig.platform.os
+		d['ARCH'] = nodeConfig.platform.arch
 		d['IMAGE'] = nodeConfig.image or ""
 		d['KEYFILE'] = nodeConfig.keyfile or ""
 		d['REPOSITORIES'] = list_sepa.join(repo.url for repo in nodeConfig.repositories)
 		d['INSTALL'] = list_sepa.join(nodeConfig.install)
 		d['START'] = list_sepa.join(nodeConfig.start)
+		d['FEATURES'] = nodeConfig.features
+		d['REQUIRES'] = nodeConfig.requires
 
 		# FIXME: should we manually install the package signing keys?
 		# We could download them from $url/repodata/repomd.xml.key

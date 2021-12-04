@@ -44,3 +44,4 @@ done
 . microconf/subst
 
 uc_subst Make.defs
+uc_subst python/_twopence/paths.py

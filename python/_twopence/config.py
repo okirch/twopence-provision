@@ -10,9 +10,11 @@ import susetest
 import curly
 import os
 import time
+import shutil
 
 from .instance import *
 from .logging import *
+from .paths import *
 
 class ConfigError(Exception):
 	pass
@@ -22,11 +24,13 @@ class ConfigError(Exception):
 # python object from a curly config file.
 ##################################################################
 class Configurable:
-	def update_value(self, config, attr_name, config_key = None):
+	def update_value(self, config, attr_name, config_key = None, typeconv = None):
 		if config_key is None:
 			config_key = attr_name
 		value = config.get_value(config_key)
 		if value is not None:
+			if typeconv:
+				value = typeconv(value)
 			setattr(self, attr_name, value)
 
 	def update_list(self, config, attr_name):
@@ -45,11 +49,26 @@ class Configurable:
 			result.append(object)
 		return result
 
+	def __str__(self):
+		info = []
+		for attr_name in self.info_attrs:
+			value = getattr(self, attr_name, None)
+			if not value:
+				continue
+			if attr_name == 'name':
+				info.append(value)
+			else:
+				info.append("%s=%s" % (attr_name, value))
+		return "%s(%s)" % (self.__class__.__name__, ", ".join(info))
+
 class ConfigDict(dict):
 	def __init__(self, type_name, item_class, verbose = False):
 		self.type_name = type_name
 		self.item_class = item_class
 		self.verbose = verbose
+
+	def __str__(self):
+		return "[%s]" % " ".join([str(_) for _ in self.values()])
 
 	def create(self, name):
 		item = self.get(name)
@@ -69,9 +88,14 @@ class ConfigDict(dict):
 				debug("Defined %s" % item)
 		return result
 
-class ExtraInfo:
-	def __init__(self):
-		self.data = {}
+	def publish(self, config):
+		for item in self.values():
+			child = config.add_child(self.type_name, item.name)
+			item.publish(child)
+
+class ExtraInfo(dict):
+	def __init__(self, name = None):
+		self.name = name
 
 	# Config files can specify opaque bits of info that can be referenced
 	# in template files. Example:
@@ -99,14 +123,33 @@ class ExtraInfo:
 				if not values:
 					values = [""]
 
-				info_name = "info_%s_%s" % (name, attr_name)
-				self.info[attr_name] = values[0]
-				self.info[attr_name + "_list"] = values
+				info_name = "%s_%s" % (name, attr_name)
+				self[info_name] = values[0]
+				self[info_name + "_list"] = values
 
-	def items(self):
-		return self.data.items()
+class SavedBackendConfig:
+	def __init__(self, name, config = None):
+		self.name = name
+		self.configs = []
+		if config:
+			self.configs.append(config)
+
+	def configure(self, config):
+		self.configs.append(config)
+
+class BackendDict(ConfigDict):
+	def __init__(self):
+		super().__init__("backend", SavedBackendConfig)
+
+	def savedConfigs(self, backendName):
+		saved = self.get(backendName)
+		if saved and saved.configs:
+			return saved.configs
+		return []
 
 class Repository(Configurable):
+	info_attrs = ['name', 'url']
+
 	def __init__(self, name):
 		self.name = name
 		self.url = None
@@ -119,15 +162,56 @@ class Repository(Configurable):
 		self.update_value(config, 'url')
 		self.update_value(config, 'keyfile')
 
-	def __str__(self):
-		return "Repository(%s, url=%s)" % (self.name, self.url)
+	def publish(self, config):
+		if self.url:
+			config.set_value("url", self.url)
+		if self.keyfile:
+			config.set_value("keyfile", self.keyfile)
 
-class Platform(Configurable):
+class Image:
+	def __init__(self, name, backends):
+		self.name = name
+		self.backends = backends
+
+class Imageset(Configurable):
+	info_attrs = ['name']
+
+	class Architecture(Configurable):
+		def __init__(self, name):
+			self.name = name
+			self.backends = BackendDict()
+
+		def configure(self, config):
+			self.backends.configure(config)
+
+		def __str__(self):
+			return "Imageset.Arch(%s)" % self.name
+
+		def getBackend(self, name):
+			return self.backends.get(name)
+
 	def __init__(self, name):
 		self.name = name
+		self.architectures = ConfigDict("architecture", self.Architecture, verbose = True)
+
+	def configure(self, config):
+		self.architectures.configure(config)
+
+	def getArchitecture(self, name):
+		return self.architectures.get(name)
+
+class Platform(Configurable):
+	info_attrs = ['name', 'image', 'vendor', 'os', 'imagesets', 'requires', 'features']
+
+	def __init__(self, name):
+		self.name = name
+		self.arch = None
 		self.image = None
 		self.keyfile = None
 		self.repositories = ConfigDict("repository", Repository)
+		self.imagesets = ConfigDict("imageset", Imageset)
+		self.backends = BackendDict()
+		self.requires = []
 		self.features = []
 		self.vendor = None
 		self.os = None
@@ -141,22 +225,117 @@ class Platform(Configurable):
 		self.update_value(config, 'image')
 		self.update_value(config, 'keyfile')
 		self.update_value(config, 'keyfile', 'ssh-keyfile')
+		self.update_list(config, 'requires')
 		self.update_list(config, 'features')
 		self.update_value(config, 'vendor')
 		self.update_value(config, 'os')
 
 		self.repositories.configure(config)
+		self.imagesets.configure(config)
+		self.backends.configure(config)
 
 		# Extract info "blah" { ... } groups from the platform config.
 		self.info.configure(config)
 
-	def __str__(self):
-		return "Platform(%s, image=%s)" % (self.name, self.image)
-
 	def getRepository(self, name):
 		return self.repositories.get(name)
 
+	##########################################################
+	# The remaining methods and properties are for newly
+	# built silver images only
+	##########################################################
+	def addBackend(self, name, **kwargs):
+		saved = self.backends.create(name)
+		if saved.configs:
+			config = saved.configs[0]
+		else:
+			config = curly.Config().tree()
+			saved.configs.append(config)
+
+		for key, value in kwargs.items():
+			config.set_value(key, value)
+
+	def save(self):
+		new_config = curly.Config()
+
+		config = new_config.tree()
+		child = config.add_child("platform", self.name)
+		self.publish(child)
+
+		path = os.path.join(self.platformdir, "%s.conf" % self.name)
+		new_config.save(path)
+		verbose("Saved platform config to %s" % path)
+
+	def publish(self, config):
+		config.set_value("vendor", self.vendor)
+		config.set_value("os", self.os)
+		if self.features:
+			config.set_value("features", self.features)
+		if self.keyfile:
+			config.set_value("ssh-keyfile", self.keyfile)
+
+		self.repositories.publish(config)
+
+		for saved in self.backends.values():
+			grand_child = config.add_child("backend", saved.name)
+			for config in saved.configs:
+				for attr_name in config.get_attributes():
+					values = config.get_values(attr_name)
+					if not values:
+						values = [""]
+					grand_child.set_value(attr_name, values)
+
+	def getOutputDir(self, name):
+		path = os.path.expanduser(twopence_user_data_dir)
+		path = os.path.join(path, name)
+		if not os.path.isdir(path):
+			os.makedirs(path)
+		return path
+
+	def getImagePath(self, backend, imgfile):
+		destdir = self.getOutputDir(backend)
+		return os.path.join(destdir, imgfile)
+
+	@property
+	def datadir(self):
+		path = os.path.expanduser(twopence_user_data_dir)
+		path = os.path.join(path, self.name)
+		if not os.path.isdir(path):
+			os.makedirs(path)
+		return path
+
+	@property
+	def platformdir(self):
+		path = os.path.expanduser(twopence_user_config_dir)
+		path = os.path.join(path, "platform.d")
+		if not os.path.isdir(path):
+			os.makedirs(path)
+		return path
+
+	def setKey(self, keyData):
+		keyfile = "%s.key" % self.name
+		keypath = os.path.join(self.datadir, keyfile)
+		with open(keypath, "wb") as f:
+			f.write(keyData)
+
+		self.keyfile = keypath
+
+	def makeImageVersion(self):
+		return time.strftime("%Y%m%d.%H%M%S")
+
+	def saveImage(self, backend, src):
+		imgfile = os.path.basename(src)
+
+		destdir = self.getOutputDir(backend)
+		dst = os.path.join(destdir, imgfile)
+		shutil.copy(src, dst)
+
+		verbose("Saved image to %s" % dst)
+		return dst
+
 class Role(Configurable):
+	info_attrs = ["name", "platform"]
+
 	def __init__(self, name):
 		self.name = name
 		self.platform = None
@@ -176,26 +355,107 @@ class Role(Configurable):
 		self.update_list(config, 'start')
 		self.update_list(config, 'features')
 
-	def __str__(self):
-		return "Role(%s, platform=%s)" % (self.name, self.platform)
-
 class Node(Configurable):
+	info_attrs = ["name", "role", "platform"]
+
 	def __init__(self, name):
 		self.name = name
 		self.role = name
+		self.platform = None
+		self.build = None
 		self.install = []
 		self.start = []
+		self._backends = BackendDict()
 
 	def configure(self, config):
 		if not config:
 			return
 
+		self._backends.configure(config)
 		self.update_value(config, 'role')
+		self.update_value(config, 'build')
+		self.update_value(config, 'platform')
 		self.update_list(config, 'install')
 		self.update_list(config, 'start')
 
-	def __str__(self):
-		return "Node(%s, role=%s)" % (self.name, self.role)
+class Build(Platform):
+	info_attrs = Platform.info_attrs + ['base_platform']
+
+	def __init__(self, name):
+		super().__init__(name)
+		self.base_platform = None
+		self.template = None
+		self.backend_build_config = None
+
+	def configure(self, config):
+		super().configure(config)
+		self.update_value(config, 'base_platform', 'base-platform')
+		self.update_value(config, 'template')
+
+	def mergeBackendConfigs(self, backendConfigs):
+		if not backendConfigs.configs:
+			return
+
+		saved = self.backends.create(backendConfigs.name)
+		saved.configs = backendConfigs.configs + saved.configs
+
+	def resolveImage(self, config, backend, base_os = None, arch = None):
+		if not self.base_platform:
+			return None
+
+		base_platform = config.getPlatform(self.base_platform)
+		if base_platform is None:
+			raise ConfigError("Cannot find base platform \"%s\"" % self.base_platform)
+
+		if not base_platform.imagesets:
+			return None
+
+		if arch is None:
+			arch = os.uname().machine
+
+		found = None
+		for imageSet in base_platform.imagesets.values():
+			if base_os and imageSet.os != base_os:
+				continue
+
+			arch_specific = imageSet.getArchitecture(arch)
+			if not arch_specific:
+				continue
+
+			build_config = arch_specific.getBackend(backend)
+			if not build_config:
+				continue
+
+			if found:
+				return None
+
+			found = imageSet
+
+		if found:
+			self.features += base_platform.features
+			self.requires += base_platform.requires
+			if not self.vendor:
+				self.vendor = base_platform.vendor
+			if not self.os:
+				self.os = base_platform.os
+			if not self.arch:
+				self.arch = arch
+
+			self.mergeBackendConfigs(build_config)
+
+		return found
+
+	def describeBuildResult(self, name = None):
+		if name is None:
+			name = self.name
+
+		result = Platform(name)
+		result.vendor = self.vendor
+		result.os = self.os
+		result.features = self.features
+		result.repositories = self.repositories
+
+		return result
 
 class EmptyNodeConfig:
 	def __init__(self, name):
@@ -205,7 +465,9 @@ class EmptyNodeConfig:
 		self.repositories = []
 		self.install = []
 		self.start = []
+		self.requires = []
 		self.features = []
+		self.backends = BackendDict()
 		self.info = None
 
 	@property
@@ -269,29 +531,52 @@ class FinalNodeConfig(EmptyNodeConfig):
 		self.install += node.install
 		self.start += node.start
 		self.features += platform.features
+		self.requires += platform.requires
+		self.backends = node._backends
 		self.info = global_info
 
-class SavedBackendConfig:
-	def __init__(self, name, config = None):
-		self.name = name
-		self.configs = []
-		if config:
-			self.configs.append(config)
+		if isinstance(platform, Build):
+			self.buildResult = platform.describeBuildResult()
+		else:
+			self.buildResult = None
 
-	def configure(self, config):
-		self.configs.append(config)
+		self.captured = {}
+
+	def captureKey(self, path):
+		# If we're not building anything, there's no point in
+		# capturing the ssh key
+		if self.buildResult is None:
+			return
+
+		with open(path, "rb") as f:
+			data = f.read()
+			self.buildResult.setKey(data)
+
+	def captureFile(self, id, path):
+		with open(path, "rb") as f:
+			data = f.read()
+
+			debug("%s: captured %s (%u bytes of data)" % (self.name, id, len(data)))
+			self.captured[id] = data
 
 class Config(Configurable):
+	_default_config_dirs = [
+		# This is defines in _twopence/paths.py
+		twopence_global_config_dir,
+	]
+
 	def __init__(self, workspace):
 		self.workspace = workspace
 		self.logspace = None
 		self.testcase = None
 		self.status = None
+		self._user_config_dirs = []
 
-		self._backends = ConfigDict("backend", SavedBackendConfig)
+		self._backends = BackendDict()
 		self._platforms = ConfigDict("platform", Platform, verbose = True)
 		self._roles = ConfigDict("role", Role, verbose = True)
 		self._nodes = ConfigDict("node", Node, verbose = True)
+		self._builds = ConfigDict("build", Build, verbose = True)
 		self._repositories = []
 
 		self.info = ExtraInfo()
@@ -300,20 +585,38 @@ class Config(Configurable):
 
 		self._valid = False
 
+	def addDirectory(self, path):
+		path = os.path.expanduser(path)
+		self._user_config_dirs.append(path)
+
+	# Given a config file name (foo.conf) try to locate the 
+	# file in a number of directories.
+	# Note that user directories (added by .addDirectory() above) take
+	# precedence over the standard ones like /etc/twopence.
+	def locateConfig(self, filename):
+		for basedir in self._user_config_dirs + Config._default_config_dirs:
+			path = os.path.join(basedir, filename)
+			if os.path.exists(path):
+				return path
+		return None
+
 	def load(self, filename):
-		if not os.path.exists(filename):
-			return
+		filename = self.locateConfig(filename)
+		if filename is None:
+			return False
 
 		debug("Loading %s" % filename)
 		config = curly.Config(filename)
 
 		self.configure(config.tree())
+		return True
 
 	def configure(self, tree):
 		self._backends.configure(tree)
 		self._platforms.configure(tree)
 		self._roles.configure(tree)
 		self._nodes.configure(tree)
+		self._builds.configure(tree)
 
 		self.update_value(tree, 'workspaceRoot', 'workspace-root')
 		self.update_value(tree, 'workspace')
@@ -322,18 +625,21 @@ class Config(Configurable):
 		# Extract data from global info "blah" { ... } groups
 		self.info.configure(tree)
 
-	def validate(self):
+	def validate(self, purpose = None):
+		if purpose == "testing":
+			if not self.testcase:
+				raise ConfigError("no testcase name configured")
+			if not self.nodes:
+				raise ConfigError("no nodes configured")
+		elif purpose == "building":
+			if not self.builds:
+				raise ConfigError("no builds configured")
+
 		if self._valid:
 			return
 
-		if not self.testcase:
-			raise ConfigError("no testcase name configured")
-
 		if not self.workspace:
 			raise ConfigError("no workspace configured")
-
-		if not self.nodes:
-			raise ConfigError("no nodes configured")
 
 		self._valid = True
 
@@ -342,7 +648,11 @@ class Config(Configurable):
 		return self._platforms.values()
 
 	def getPlatform(self, name):
-		return self._platforms.get(name)
+		found = self._platforms.get(name)
+		if found is None:
+			if self.load("platform.d/%s.conf" % name):
+				found = self._platforms.get(name)
+		return found
 
 	@property
 	def roles(self):
@@ -358,18 +668,40 @@ class Config(Configurable):
 	def getNode(self, name):
 		return self._nodes.get(name)
 
-	def configureBackend(self, backend):
-		saved = self._backends.get(backend.name)
-		if saved and saved.configs:
-			debug("Applying %s configs to backend %s" % (len(saved.configs), saved.name))
-			for config in saved.configs:
-				backend.configure(config)
+	@property
+	def builds(self):
+		return self._builds.values()
 
-	def finalizeNode(self, node):
-		platform = self.platformForRole(node.role)
+	def getBuild(self, name):
+		return self._builds.get(name)
+
+	def configureBackend(self, backend):
+		for config in self._backends.savedConfigs(backend.name):
+			backend.configure(config)
+
+	def findBuildNode(self):
+		result = None
+		for node in self.nodes:
+			if node.build:
+				if result:
+					raise ConfigError("More than one node with a build target; unable to handle")
+				result = node
+
+		return result
+
+	def finalizeNode(self, node, backend):
+		platform = self.platformForNode(node, backend)
 
 		if not platform.vendor or not platform.os:
 			raise ConfigError("Node %s uses platform %s, which lacks a vendor and os definition" % (platform.name, node.name))
+
+		if platform.requires:
+			for name in platform.requires:
+				if self.load("%s.conf" % name):
+					continue
+
+				raise ConfigError("node %s requires \"%s\" but I don't know how to provide it (maybe you need to create %s)" % (
+							node.name, name, filename))
 
 		result = FinalNodeConfig(node, platform, self.info)
 
@@ -381,26 +713,44 @@ class Config(Configurable):
 		if role:
 			result.fromRole(role)
 
+		# Extract backend specific config data from node, role and platform
+		backend.configureNode(result, self)
+
 		return result
 
 	@staticmethod
 	def createEmptyNode(name, workspace = None):
 		return EmptyNodeConfig(name)
 
-	def platformForRole(self, roleName):
-		role = self.getRole(roleName)
+	def platformForNode(self, node, backend):
+		if node.build:
+			build = self._builds.get(node.build)
+			if not build:
+				raise ConfigError("Cannot find build \"%s\" for node \"%s\"" % (node.build, node.name))
+
+			build.resolveImage(self, backend)
+			return build
+
+		if node.platform:
+			platform = self.getPlatform(node.platform)
+			if platform:
+				return platform
+
+			raise ConfigError("Cannot find platform \"%s\" for node \"%s\"" % (node.platform, node.name))
+
+		role = self.getRole(node.role)
 		if role and role.platform:
 			platform = self.getPlatform(role.platform)
 			if platform:
 				return platform
 
-			raise ValueError("Cannot find platform \"%s\" for role \"%s\"" % (role.platform, node.role))
+			raise ConfigError("Cannot find platform \"%s\" for role \"%s\"" % (role.platform, node.role))
 
 		if self.defaultRole.platform:
 			platform = self.getPlatform(self.defaultRole.platform)
 			if platform:
 				return platform
 
-			raise ValueError("Cannot find platform \"%s\" for default role" % (self.defaultRole.platform))
+			raise ConfigError("Cannot find platform \"%s\" for default role" % (self.defaultRole.platform))
 
-		raise ValueError("No platform defined for role \"%s\"" % roleName)
+		raise ConfigError("No platform defined for node \"%s\" (role \"%s\")" % (node.name, node.role))
