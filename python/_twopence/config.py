@@ -37,6 +37,38 @@ class Configurable:
 			assert(type(current) == list)
 			setattr(self, attr_name, current + value)
 
+	def configure_children(self, config, block_name, factory):
+		result = []
+		for name in config.get_children(block_name):
+			object = factory(name)
+			object.configure(config.get_child(block_name, name))
+			result.append(object)
+		return result
+
+class ConfigDict(dict):
+	def __init__(self, type_name, item_class, verbose = False):
+		self.type_name = type_name
+		self.item_class = item_class
+		self.verbose = verbose
+
+	def create(self, name):
+		item = self.get(name)
+		if item is None:
+			item = self.item_class(name)
+			self[name] = item
+		return item
+
+	def configure(self, config):
+		result = []
+		for name in config.get_children(self.type_name):
+			item = self.create(name)
+			item.configure(config.get_child(self.type_name, name))
+			result.append(item)
+
+			if self.verbose:
+				debug("Defined %s" % item)
+		return result
+
 class ExtraInfo:
 	def __init__(self):
 		self.data = {}
@@ -95,7 +127,7 @@ class Platform(Configurable):
 		self.name = name
 		self.image = None
 		self.keyfile = None
-		self.repositories = {}
+		self.repositories = ConfigDict("repository", Repository)
 		self.features = []
 		self.vendor = None
 		self.os = None
@@ -113,13 +145,7 @@ class Platform(Configurable):
 		self.update_value(config, 'vendor')
 		self.update_value(config, 'os')
 
-		for name in config.get_children("repository"):
-			child = config.get_child("repository", name)
-
-			repo = self.createRepository(name)
-			repo.configure(child)
-
-			# print("Platform %s provides repo %s at %s" % (self.name, repo.name, repo.url))
+		self.repositories.configure(config)
 
 		# Extract info "blah" { ... } groups from the platform config.
 		self.info.configure(config)
@@ -129,13 +155,6 @@ class Platform(Configurable):
 
 	def getRepository(self, name):
 		return self.repositories.get(name)
-
-	def createRepository(self, name):
-		repo = self.repositories.get(name)
-		if repo is None:
-			repo = Repository(name)
-			self.repositories[name] = repo
-		return repo
 
 class Role(Configurable):
 	def __init__(self, name):
@@ -253,9 +272,14 @@ class FinalNodeConfig(EmptyNodeConfig):
 		self.info = global_info
 
 class SavedBackendConfig:
-	def __init__(self, name, config):
+	def __init__(self, name, config = None):
 		self.name = name
-		self.config = config
+		self.configs = []
+		if config:
+			self.configs.append(config)
+
+	def configure(self, config):
+		self.configs.append(config)
 
 class Config(Configurable):
 	def __init__(self, workspace):
@@ -264,15 +288,15 @@ class Config(Configurable):
 		self.testcase = None
 		self.status = None
 
-		self.backends = []
-		self._platforms = {}
-		self._roles = {}
-		self._nodes = {}
+		self._backends = ConfigDict("backend", SavedBackendConfig)
+		self._platforms = ConfigDict("platform", Platform, verbose = True)
+		self._roles = ConfigDict("role", Role, verbose = True)
+		self._nodes = ConfigDict("node", Node, verbose = True)
 		self._repositories = []
 
 		self.info = ExtraInfo()
 
-		self.defaultRole = self.createRole("default")
+		self.defaultRole = self._roles.create("default")
 
 		self._valid = False
 
@@ -286,17 +310,14 @@ class Config(Configurable):
 		self.configure(config.tree())
 
 	def configure(self, tree):
-		self.configureObjects(tree, "platform", self.createPlatform)
-		self.configureObjects(tree, "role", self.createRole)
-		self.configureObjects(tree, "node", self.createNode)
+		self._backends.configure(tree)
+		self._platforms.configure(tree)
+		self._roles.configure(tree)
+		self._nodes.configure(tree)
 
 		self.update_value(tree, 'workspaceRoot', 'workspace-root')
 		self.update_value(tree, 'workspace')
 		self.update_value(tree, 'testcase')
-
-		for name in tree.get_children("backend"):
-			child = tree.get_child("backend", name)
-			self.backends.append(SavedBackendConfig(name, child))
 
 		# Extract data from global info "blah" { ... } groups
 		self.info.configure(tree)
@@ -316,32 +337,12 @@ class Config(Configurable):
 
 		self._valid = True
 
-	def configureObjects(self, config, config_key, factory):
-		result = []
-		for name in config.get_children(config_key,):
-			child = config.get_child(config_key, name)
-
-			object = factory(name)
-			object.configure(child)
-			result.append(object)
-
-			debug("Defined %s" % object)
-
-		return result
-
 	@property
 	def platforms(self):
 		return self._platforms.values()
 
 	def getPlatform(self, name):
 		return self._platforms.get(name)
-
-	def createPlatform(self, name):
-		platform = self._platforms.get(name)
-		if platform is None:
-			platform = Platform(name)
-			self._platforms[name] = platform
-		return platform
 
 	@property
 	def roles(self):
@@ -350,13 +351,6 @@ class Config(Configurable):
 	def getRole(self, name):
 		return self._roles.get(name)
 
-	def createRole(self, name):
-		role = self._roles.get(name)
-		if role is None:
-			role = Role(name)
-			self._roles[name] = role
-		return role
-
 	@property
 	def nodes(self):
 		return self._nodes.values()
@@ -364,18 +358,12 @@ class Config(Configurable):
 	def getNode(self, name):
 		return self._nodes.get(name)
 
-	def createNode(self, name):
-		node = self._nodes.get(name)
-		if node is None:
-			node = Node(name)
-			self._nodes[name] = node
-		return node
-
 	def configureBackend(self, backend):
-		for saved in self.backends:
-			if saved.name == backend.name:
-				debug("Applying %s backend config" % saved.name)
-				backend.configure(saved.config)
+		saved = self._backends.get(backend.name)
+		if saved and saved.configs:
+			debug("Applying %s configs to backend %s" % (len(saved.configs), saved.name))
+			for config in saved.configs:
+				backend.configure(config)
 
 	def finalizeNode(self, node):
 		platform = self.platformForRole(node.role)
