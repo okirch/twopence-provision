@@ -181,9 +181,6 @@ class ActionBuild(Action):
 
 		verbose("Using %s" % build)
 
-		# FIXME: Still needed?
-		build.resolveImage(config, backend = bom.backend)
-
 		# FIXME: hack
 		config.testcase = "build"
 

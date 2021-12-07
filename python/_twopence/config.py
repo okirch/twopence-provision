@@ -414,6 +414,7 @@ class Build(Platform):
 		saved.configs = backendConfigs.configs + saved.configs
 
 	def resolveImage(self, config, backend, base_os = None, arch = None):
+		assert(type(backend) == str)
 		if not self.base_platform:
 			return None
 
@@ -441,6 +442,7 @@ class Build(Platform):
 				continue
 
 			if found:
+				verbose("Found more than one matching image in base platform %s" % self.base_platform)
 				return None
 
 			found = imageSet
@@ -456,6 +458,8 @@ class Build(Platform):
 				self.arch = arch
 
 			self.mergeBackendConfigs(build_config)
+		else:
+			verbose("No matching image in base platform %s" % self.base_platform)
 
 		return found
 
@@ -739,7 +743,9 @@ class Config(Configurable):
 			if not build:
 				raise ConfigError("Cannot find build \"%s\" for node \"%s\"" % (node.build, node.name))
 
-			build.resolveImage(self, backend)
+			# This locates the correct base image for this build
+			if not build.resolveImage(self, backend.name):
+				raise ConfigError("Cannot resolve base image \"%s\" for build \"%s\"" % (build.base_platform, build.name))
 			return build
 
 		if node.platform:
