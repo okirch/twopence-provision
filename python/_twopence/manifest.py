@@ -86,3 +86,7 @@ class BOM:
 			os.makedirs(self.workspace)
 
 		bom.save(self._path)
+
+	def remove(self):
+		if self.exists:
+			os.remove(self._path)

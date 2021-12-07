@@ -1,4 +1,12 @@
 #!/usr/bin/python3
+##################################################################
+#
+# Main twopence provisioner script
+#
+# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+#
+##################################################################
+
 
 from _twopence.provision import *
 
@@ -75,8 +83,6 @@ def load_config(bom, validate = True):
 	return config
 
 def action_init(args):
-	workspace = args.workspace
-
 	bom = BOM(args.workspace)
 
 	if bom.exists:
@@ -104,7 +110,6 @@ def action_init(args):
 	TestTopology(backend, config = config, workspace = args.workspace)
 
 def action_build(args):
-	print(args)
 	if not args.target:
 		print("Missing argument: name of target build")
 		exit(1)
@@ -201,6 +206,14 @@ def action_destroy(args):
 	topology.destroy()
 	topology.cleanup()
 
+	if args.zap:
+		import os
+
+		bom = BOM(args.workspace)
+		bom.remove()
+		os.rmdir(args.workspace)
+		verbose("Removed workspace %s" % args.workspace)
+
 def action_status(args):
 	topology = create_topology(args)
 	if not topology.detect(detectNetwork = True):
@@ -272,6 +285,8 @@ def build_arg_parser():
 
 	sp = sub.add_parser('destroy', help = 'Destroy the topology')
 	sp.set_defaults(action = action_destroy)
+	sp.add_argument('--zap', default = False, action = 'store_true',
+			help = 'Remove the workspace as well')
 
 	sp = sub.add_parser('status', help = 'Display status on the topology')
 	sp.set_defaults(action = action_status)
