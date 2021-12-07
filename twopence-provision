@@ -260,8 +260,6 @@ def build_arg_parser():
 
 	sp = sub.add_parser('build', help = 'Build a silver image')
 	sp.set_defaults(action = action_build)
-	sp.add_argument('--backend', default = 'vagrant',
-			help = 'the provisioning backend to use [vagrant]')
 	sp.add_argument('--auto-destroy', default = False, action = 'store_true',
 			help = 'if one or more of the requested nodes are running, destroy them')
 	sp.add_argument('target', metavar='TARGET', nargs='?',
@@ -269,8 +267,6 @@ def build_arg_parser():
 
 	sp = sub.add_parser('create', help = 'Create the requested nodes')
 	sp.set_defaults(action = action_create)
-	sp.add_argument('--backend', default = 'vagrant',
-			help = 'the provisioning backend to use [vagrant]')
 	sp.add_argument('--auto-destroy', default = False, action = 'store_true',
 			help = 'if one or more of the requested nodes are running, destroy them')
 
