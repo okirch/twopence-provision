@@ -218,6 +218,9 @@ class Platform(Configurable):
 
 		self.info = ExtraInfo()
 
+		# used during build, exclusively
+		self._raw_key = None
+
 	def configure(self, config):
 		if not config:
 			return
@@ -254,6 +257,13 @@ class Platform(Configurable):
 
 		for key, value in kwargs.items():
 			config.set_value(key, value)
+
+	def finalize(self):
+		if not self.keyfile and self._raw_key:
+			self.saveKey(self._raw_key)
+
+		if not self.keyfile:
+			verbose("WARNING: backend did not capture an ssh key for %s" % self.name)
 
 	def save(self):
 		new_config = curly.Config()
@@ -312,13 +322,17 @@ class Platform(Configurable):
 			os.makedirs(path)
 		return path
 
-	def setKey(self, keyData):
+	def setRawKey(self, keyData):
+		self._raw_key = keyData
+
+	def saveKey(self, keyData):
 		keyfile = "%s.key" % self.name
 		keypath = os.path.join(self.datadir, keyfile)
 		with open(keypath, "wb") as f:
 			f.write(keyData)
 
 		self.keyfile = keypath
+		verbose("Saved captured SSH key to %s" % keypath)
 
 	def makeImageVersion(self):
 		return time.strftime("%Y%m%d.%H%M%S")
@@ -540,8 +554,13 @@ class FinalNodeConfig(EmptyNodeConfig):
 		else:
 			self.buildResult = None
 
-		self.captured = {}
-
+	# Called from the backend when it detects a new private key
+	# during provisioning.
+	# Currently, only used while building a new silver image, in
+	# which case we push the raw key to the buildResult,
+	# which stores its binary data in some attribute.
+	#
+	# Later, during save(), it writes out the actual raw data.
 	def captureKey(self, path):
 		# If we're not building anything, there's no point in
 		# capturing the ssh key
@@ -549,15 +568,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 			return
 
 		with open(path, "rb") as f:
-			data = f.read()
-			self.buildResult.setKey(data)
-
-	def captureFile(self, id, path):
-		with open(path, "rb") as f:
-			data = f.read()
-
-			debug("%s: captured %s (%u bytes of data)" % (self.name, id, len(data)))
-			self.captured[id] = data
+			self.buildResult.setRawKey(f.read())
 
 class Config(Configurable):
 	_default_config_dirs = [

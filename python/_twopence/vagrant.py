@@ -313,7 +313,7 @@ class VagrantBackend(Backend):
 				verbose("Vagrant created a new key for this instance - we should copy it")
 				path = os.path.join(instance.workspace, ".vagrant/machines/default/libvirt/private_key")
 				if os.path.exists(path):
-					instance.config.captureFile("ssh-key", path)
+					instance.config.captureKey(path)
 				else:
 					debug("%s does not exist" % path)
 				continue
@@ -454,14 +454,7 @@ class VagrantBackend(Backend):
 		#	}
 		platform.addBackend(self.name, image = platform.name, url = metaPath)
 
-		# Should go into GenericInstance
-		if platform.keyfile is None:
-			verbose("instance %s captured %s" % (instance.name, instance.config.captured.keys()))
-			sshKey = instance.config.captured.get('ssh-key')
-			if sshKey is not None:
-				platform.setKey(sshKey)
-			else:
-				verbose("WARNING: backend did not capture an ssh key")
+		platform.finalize()
 
 		platform.save()
 		return True
