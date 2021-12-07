@@ -7,7 +7,7 @@
 #
 ##################################################################
 
-
+import sys
 from _twopence.provision import *
 
 global_config_files	= [
@@ -15,237 +15,267 @@ global_config_files	= [
 	"provision.conf",
 ]
 
-def action_help(args):
-	parser.print_help()
-	exit(0)
+class Action:
+	def __init__(self, args):
+		if args.workspace is None:
+			print("Error: missing --workspace option")
+			parser.print_help()
+			exit(2)
 
-def create_topology(args, purpose = None):
-	bom = BOM(args.workspace)
+		self.args = args
 
-	if not bom.load():
-		raise ValueError("Failed to load BOM from %s" % bom.path)
+		self.workspace = args.workspace
+		self.auto_destroy = False
 
-	backend = Backend.create(bom.backend)
-	config = load_config(bom)
+		self._bom = None
+		self._backend = None
+		self._config = None
 
-	config.validate(purpose = purpose)
-
-	topology = TestTopology(backend, config = config, workspace = args.workspace)
-	return topology
-
-def provision_topology(topology):
-	if topology.detect():
-		print("One or more VMs seem to exist.")
-		for instance in topology.instances:
-			print("  %s" % instance.name)
-
-		if not args.auto_destroy:
-			print("Please destroy these instances first, or invoke this command with --auto-destroy")
-			exit(1)
-
-		verbose("Auto-destroying these instances NOW")
-		topology.stop(destroy = True)
-
-		topology.detect()
-		if topology.hasRunningInstances():
-			print("Cannot stop all VMs - giving up")
-			exit(1)
-
-		topology.destroy()
-		topology.cleanup()
-
-	if not topology.prepare():
-		print("Unable to prepare all instances")
+	def fatal(self, msg):
+		print("FATAL: " + msg, file = sys.stderr)
 		exit(1)
 
-	if not topology.start():
-		print("Unable to start build instance")
-		exit(1)
+	@property
+	def bom(self):
+		if self._bom is None:
+			bom = BOM(self.workspace)
+			if not bom.load():
+				raise ValueError("Failed to load BOM from %s" % bom.path)
 
-def load_config(bom, validate = True):
-	config = Config(bom.workspace)
+			self._bom = bom
+		return self._bom
 
-	config.status = bom.status
-	config.logspace = bom.logspace
+	@property
+	def backend(self):
+		if self._backend is None:
+			bom = self.bom
+			self._backend = Backend.create(bom.backend)
+		return self._backend
 
-	for path in global_config_files:
-		config.load(path)
+	def loadConfig(self, validate = True):
+		if self._config:
+			return self._config
 
-	# Note: we load global config files first; THEN
-	# we add user directories to the config search path.
-	config.addDirectory(twopence_user_config_dir)
+		bom = self.bom
 
-	for path in bom.config:
-		config.load(path)
+		config = Config(bom.workspace)
+		config.status = bom.status
+		config.logspace = bom.logspace
 
-	if validate:
-		config.validate()
-	return config
+		for path in global_config_files:
+			config.load(path)
 
-def action_init(args):
-	bom = BOM(args.workspace)
+		# Note: we load global config files first; THEN
+		# we add user directories to the config search path.
+		config.addDirectory(twopence_user_config_dir)
 
-	if bom.exists:
-		print("BOM file %s seems to exist, refusing to initialize" % bom.path)
-		exit(1)
+		for path in bom.config:
+			config.load(path)
 
-	bom.backend = args.backend
-	bom.logspace = args.logspace
-	for path in args.config:
-		bom.addConfig(path)
+		if validate:
+			config.validate()
 
-	bom.save()
+		self._config = config
+		return config
 
-	try:
-		config = load_config(bom, validate = False)
-	except ConfigError as e:
-		print("Error: the resulting configuration is not valid")
-		print(e)
-		exit(2)
+	def createTopology(self, purpose = None):
+		bom = self.bom
 
-	return
+		backend = self.backend
+		config = self.loadConfig()
 
-	backend = Backend.create(bom.backend)
-	# This will create status.conf
-	TestTopology(backend, config = config, workspace = args.workspace)
+		config.validate(purpose = purpose)
 
-def action_build(args):
-	if not args.target:
-		print("Missing argument: name of target build")
-		exit(1)
+		return TestTopology(backend, config = config, workspace = self.workspace)
 
-	bom = BOM(args.workspace)
-	if not bom.load():
-		raise ValueError("Failed to load BOM from %s" % bom.path)
+	def provisionTopology(self, topology):
+		if topology.detect():
+			print("One or more VMs seem to exist.")
+			for instance in topology.instances:
+				print("  %s" % instance.name)
 
-	config = load_config(bom, validate = False)
+			if not self.auto_destroy:
+				self.fatal("Please destroy these instances first, or invoke this command with --auto-destroy")
 
-	build_config = "/usr/lib/twopence/provision/%s/build.conf" % args.target
-	if not config.load(build_config):
-		raise ValueError("Cannot find %s" % build_config)
+			verbose("Auto-destroying these instances NOW")
+			self.shutdownTopology(topology)
+			self.destroyTopology(topology)
 
-	buildNode = config.findBuildNode()
-	if buildNode is None:
-		raise ValueError("Cannot find the build node")
+		if not topology.prepare():
+			self.fatal("Unable to prepare all instances")
 
-	build = config.getBuild(buildNode.build)
-	if not build:
-		raise ValueError("Cannot find a valid build description")
+		if not topology.start():
+			self.fatal("Unable to start instance(s)")
 
-	verbose("Using %s" % build)
-
-	build.resolveImage(config, backend = bom.backend)
-
-	# FIXME: hack
-	config.testcase = "build"
-
-	backend = Backend.create(bom.backend)
-	topology = TestTopology(backend, config = config, workspace = args.workspace)
-
-	# This provisions the build node - and with that, we're already done.
-	provision_topology(topology)
-
-	verbose("stopping cluster")
-	topology.stop()
-	topology.detect()
-	if topology.hasRunningInstances():
-		print("Cannot stop all VMs - giving up")
-		exit(1)
-
-	topology.package(buildNode.name)
-
-	topology.destroy()
-	topology.cleanup()
-
-def action_create(args):
-	topology = create_topology(args, purpose = "testing")
-	# FIXME: use provision_topology()
-	if topology.detect():
-		print("One or more VMs seem to exist.")
-		for instance in topology.instances:
-			print("  %s" % instance.name)
-
-		if not args.auto_destroy:
-			print("Please destroy these instances first, or invoke this command with --auto-destroy")
-			exit(1)
-
-		verbose("Auto-destroying these instances NOW")
-		topology.stop(destroy = True)
-
-		topology.detect()
-		if topology.hasRunningInstances():
-			print("Cannot stop all VMs - giving up")
-			exit(1)
-
-		topology.destroy()
-		topology.cleanup()
-
-	if not topology.prepare():
-		print("Unable to prepare all instances")
-		exit(1)
-
-	topology.start()
-
-def action_destroy(args):
-	topology = create_topology(args)
-	if not topology.detect():
-		verbose("Nothing to destroy")
-	else:
-		print("Detected running instance(s):")
-		for instance in topology.instances:
-			print("  %s" % instance.name)
-
-		verbose("Destroying these instances")
+	def shutdownTopology(self, topology):
+		verbose("Stopping all instances")
 		topology.stop()
-
 		topology.detect()
 		if topology.hasRunningInstances():
-			print("Cannot stop all VMs - giving up")
-			exit(1)
+			self.fatal("Cannot stop all VMs - giving up")
 
-	topology.destroy()
-	topology.cleanup()
+	def destroyTopology(self, topology):
+		topology.destroy()
+		topology.cleanup()
 
-	if args.zap:
-		import os
+class ActionHelp(Action):
+	def perform(self):
+		parser.print_help()
+		exit(0)
 
-		bom = BOM(args.workspace)
-		bom.remove()
-		os.rmdir(args.workspace)
-		verbose("Removed workspace %s" % args.workspace)
+class ActionInit(Action):
+	def __init__(self, args):
+		super().__init__(args)
 
-def action_status(args):
-	topology = create_topology(args)
-	if not topology.detect(detectNetwork = True):
-		verbose("No instances")
-	else:
-		print("Detected instance(s) for testcase %s:" % topology.testcase)
-		for instance in topology.instances:
-			addresses = []
-			for nif in instance.networkInterfaces:
-				addresses.append(str(nif))
+		self._backend = args.backend
+		self._logspace = args.logspace
+		self._configs = args.config
 
-			if addresses:
-				address = addresses.pop(0)
-			else:
-				address = ''
+	def perform(self):
+		bom = BOM(self.workspace)
+		if bom.exists:
+			self.fatal("BOM file %s seems to exist, refusing to initialize" % bom.path)
+		self._bom = bom
 
-			print("  %-20s %-10s %s" % (instance.name,
-					instance.running and "running" or "stopped",
-					address))
+		bom.backend = self._backend
+		bom.logspace = self._logspace
+		for path in self._configs:
+			bom.addConfig(path)
 
-			while addresses:
-				address = addresses.pop(0)
-				print(" %*.32s %s" % ('', address))
+		bom.save()
 
-def action_show(args):
-	topology = create_topology(args)
-	for type in args.info_type:
-		if type == 'status-file':
-			st = topology.persistentState
-			print(st.path or "")
+		try:
+			config = self.loadConfig(validate = False)
+		except ConfigError as e:
+			print("Error: the resulting configuration is not valid")
+			print(e)
+			exit(2)
+
+		return
+
+class ActionBuild(Action):
+	def __init__(self, args):
+		super().__init__(args)
+
+		self.auto_destroy = args.auto_destroy
+		if not args.target:
+			self.fatal("Missing argument: name of target build")
+		self.target = args.target
+
+	def perform(self):
+		bom = self.bom
+
+		config = self.loadConfig(validate = False)
+
+		build_config = "/usr/lib/twopence/provision/%s/build.conf" % self.target
+		if not config.load(build_config):
+			raise ValueError("Cannot find %s" % build_config)
+
+		buildNode = config.findBuildNode()
+		if buildNode is None:
+			raise ValueError("Cannot find the build node")
+
+		build = config.getBuild(buildNode.build)
+		if not build:
+			raise ValueError("Cannot find a valid build description")
+
+		verbose("Using %s" % build)
+
+		# FIXME: Still needed?
+		build.resolveImage(config, backend = bom.backend)
+
+		# FIXME: hack
+		config.testcase = "build"
+
+		topology = TestTopology(self.backend, config = config, workspace = self.workspace)
+
+		# This provisions the build node - and with that, we're already done,
+		# so we can take it down right away.
+		# A nicer approach would be to separate the build steps from actual
+		# provisioning steps, but that's for the future.
+		self.provisionTopology(topology)
+		self.shutdownTopology(topology)
+
+		# Now package up the image and all the ancillary information, like
+		# ssh keys and the platform .config file describing the result.
+		topology.package(buildNode.name)
+
+		self.destroyTopology(topology)
+
+class ActionCreate(Action):
+	def __init__(self, args):
+		super().__init__(args)
+		self.auto_destroy = args.auto_destroy
+
+	def perform(self):
+		topology = self.createTopology(purpose = "testing")
+		self.provisionTopology(topology)
+
+class ActionDestroy(Action):
+	def __init__(self, args):
+		super().__init__(args)
+		self.zap = args.zap
+
+	def perform(self):
+		topology = self.createTopology()
+		if not topology.detect():
+			verbose("Nothing to destroy")
 		else:
-			raise ValueError("Unsupported info-type \"%s\"" % type)
+			print("Detected running instance(s):")
+			for instance in topology.instances:
+				print("  %s" % instance.name)
+
+			self.shutdownTopology(topology)
+
+		self.destroyTopology(topology)
+
+		if self.zap:
+			import os
+
+			bom = self.bom
+			bom.remove()
+			os.rmdir(args.workspace)
+			verbose("Removed workspace %s" % args.workspace)
+
+class ActionStatus(Action):
+	def perform(self):
+		topology = self.createTopology()
+		if not topology.detect(detectNetwork = True):
+			verbose("No instances")
+		else:
+			print("Detected instance(s) for testcase %s:" % topology.testcase)
+			for instance in topology.instances:
+				addresses = []
+				for nif in instance.networkInterfaces:
+					addresses.append(str(nif))
+
+				if addresses:
+					address = addresses.pop(0)
+				else:
+					address = ''
+
+				print("  %-20s %-10s %s" % (instance.name,
+						instance.running and "running" or "stopped",
+						address))
+
+				while addresses:
+					address = addresses.pop(0)
+					print(" %*.32s %s" % ('', address))
+
+class ActionShow(Action):
+	def __init__(self, args):
+		super().__init__(args)
+
+		self.info_types = args.info_type
+
+	def perform(self):
+		topology = self.createTopology()
+		for type in self.info_types:
+			if type == 'status-file':
+				st = topology.persistentState
+				print(st.path or "")
+			else:
+				raise ValueError("Unsupported info-type \"%s\"" % type)
 
 def build_arg_parser():
 	import argparse
@@ -263,7 +293,7 @@ def build_arg_parser():
 	sub = parser.add_subparsers(dest = 'command')
 
 	sp = sub.add_parser('init', help = 'Initialize a run')
-	sp.set_defaults(action = action_init)
+	sp.set_defaults(action = ActionInit)
 	sp.add_argument('--config', action = 'append', default = [],
 			help='path to the file describing the nodes to be provisioned')
 	sp.add_argument('--backend', default = 'vagrant',
@@ -272,32 +302,32 @@ def build_arg_parser():
 			help = 'the default location for test runs to write their log files to')
 
 	sp = sub.add_parser('build', help = 'Build a silver image')
-	sp.set_defaults(action = action_build)
+	sp.set_defaults(action = ActionBuild)
 	sp.add_argument('--auto-destroy', default = False, action = 'store_true',
 			help = 'if one or more of the requested nodes are running, destroy them')
 	sp.add_argument('target', metavar='TARGET', nargs='?',
 			help = 'name of the target image to be built')
 
 	sp = sub.add_parser('create', help = 'Create the requested nodes')
-	sp.set_defaults(action = action_create)
+	sp.set_defaults(action = ActionCreate)
 	sp.add_argument('--auto-destroy', default = False, action = 'store_true',
 			help = 'if one or more of the requested nodes are running, destroy them')
 
 	sp = sub.add_parser('destroy', help = 'Destroy the topology')
-	sp.set_defaults(action = action_destroy)
+	sp.set_defaults(action = ActionDestroy)
 	sp.add_argument('--zap', default = False, action = 'store_true',
 			help = 'Remove the workspace as well')
 
 	sp = sub.add_parser('status', help = 'Display status on the topology')
-	sp.set_defaults(action = action_status)
+	sp.set_defaults(action = ActionStatus)
 
 	sp = sub.add_parser('show', help = 'Display info on the test case')
-	sp.set_defaults(action = action_show)
+	sp.set_defaults(action = ActionShow)
 	sp.add_argument('info_type', metavar='INFO-TYPE', nargs = '+',
 			help='info type to display (status-file, ...)')
 
 	sp = sub.add_parser('help', help = 'Print this message')
-	sp.set_defaults(action = action_help)
+	sp.set_defaults(action = ActionHelp)
 
 	return parser
 
@@ -317,9 +347,5 @@ if not args.command:
 	parser.print_help()
 	exit(2)
 
-if args.workspace is None:
-	print("Error: missing --workspace option")
-	parser.print_help()
-	exit(2)
-
-args.action(args)
+action = args.action(args)
+action.perform()
