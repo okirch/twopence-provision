@@ -68,6 +68,8 @@ Vagrant.configure("2") do |config|
 
     for name in @START@; do
 	systemctl start $name.service
+	# in case we reboot below...
+	systemctl enable $name.service
     done
 
     echo "Success."
