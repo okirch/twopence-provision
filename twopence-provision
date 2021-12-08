@@ -31,6 +31,9 @@ class Action:
 		self._backend = None
 		self._config = None
 
+	def error(self, msg):
+		print("Error: " + msg, file = sys.stderr)
+
 	def fatal(self, msg):
 		print("FATAL: " + msg, file = sys.stderr)
 		exit(1)
@@ -117,6 +120,37 @@ class Action:
 	def destroyTopology(self, topology):
 		topology.destroy()
 		topology.cleanup()
+
+	def zapWorkspace(self, force = False):
+		import os
+		import shutil
+
+		bom = self.bom
+
+		empty = True
+		for entry in os.scandir(args.workspace):
+			if entry.path != bom.path:
+				if not force:
+					if entry.is_dir():
+						self.error("workspace contains directory %s" % entry.path)
+					else:
+						self.error("workspace contains file %s" % entry.path)
+					empty = False
+				else:
+					if entry.is_dir():
+						verbose("Removing directory %s" % entry.path)
+						shutil.rmtree(entry.path)
+					else:
+						verbose("Removing file %s" % entry.path)
+						os.remove(entry.path)
+
+		if not empty:
+			self.fatal("cannot zap workspace, not empty")
+
+		verbose("Removing %s" % bom.path)
+		bom.remove()
+		os.rmdir(args.workspace)
+		verbose("Removed workspace %s" % args.workspace)
 
 class ActionHelp(Action):
 	def perform(self):
@@ -212,6 +246,7 @@ class ActionDestroy(Action):
 	def __init__(self, args):
 		super().__init__(args)
 		self.zap = args.zap
+		self.force = args.force
 
 	def perform(self):
 		topology = self.createTopology()
@@ -227,12 +262,7 @@ class ActionDestroy(Action):
 		self.destroyTopology(topology)
 
 		if self.zap:
-			import os
-
-			bom = self.bom
-			bom.remove()
-			os.rmdir(args.workspace)
-			verbose("Removed workspace %s" % args.workspace)
+			self.zapWorkspace(force = self.force)
 
 class ActionStatus(Action):
 	def perform(self):
@@ -313,7 +343,9 @@ def build_arg_parser():
 	sp = sub.add_parser('destroy', help = 'Destroy the topology')
 	sp.set_defaults(action = ActionDestroy)
 	sp.add_argument('--zap', default = False, action = 'store_true',
-			help = 'Remove the workspace as well')
+			help = 'Remove the workspace as well, empty')
+	sp.add_argument('--force', default = False, action = 'store_true',
+			help = 'If used with --zap, remove the workspace and everything it contains')
 
 	sp = sub.add_parser('status', help = 'Display status on the topology')
 	sp.set_defaults(action = ActionStatus)
