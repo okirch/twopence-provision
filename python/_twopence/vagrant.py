@@ -297,7 +297,7 @@ class VagrantBackend(Backend):
 		timeout = instance.config.vagrant.timeout or 120
 
 		print("Starting %s instance (timeout = %d)" % (instance.name, timeout))
-		status = self.runShellCmd("vagrant up", cwd = instance.workspace, timeout = timeout)
+		status = self.runShellCmd("vagrant --no-tty up", cwd = instance.workspace, timeout = timeout)
 
 		verbose("Saving output to vagrant_up.log")
 		instance.saveExecStatus("vagrant_up.log", status)
@@ -310,7 +310,7 @@ class VagrantBackend(Backend):
 
 		for line in status.output:
 			if "generated public key" in line:
-				verbose("Vagrant created a new key for this instance - we should copy it")
+				verbose("Vagrant created a new key for this instance - capturing it")
 				path = os.path.join(instance.workspace, ".vagrant/machines/default/libvirt/private_key")
 				if os.path.exists(path):
 					instance.config.captureKey(path)
