@@ -24,6 +24,8 @@ class ConfigError(Exception):
 # python object from a curly config file.
 ##################################################################
 class Configurable:
+	info_attrs = []
+
 	def update_value(self, config, attr_name, config_key = None, typeconv = None):
 		if config_key is None:
 			config_key = attr_name
