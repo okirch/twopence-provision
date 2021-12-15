@@ -25,6 +25,7 @@ class TopologyStatus:
 			self._features = config.get_values("features")
 			self._vendor = config.get_value("vendor")
 			self._os = config.get_value("os")
+			self._keyfile = config.get_value("keyfile")
 
 		@property
 		def ipv4_address(self):
@@ -75,6 +76,10 @@ class TopologyStatus:
 			if self._os != value:
 				self._config.set_value("os", value)
 				self._os = value
+
+		@property
+		def keyfile(self):
+			return self._keyfile
 
 		def clearNetwork(self):
 			self.ipv4_address = None
