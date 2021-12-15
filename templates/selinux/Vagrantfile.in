@@ -17,11 +17,19 @@ Vagrant.configure("2") do |config|
      os="@OS@"
      arch="@ARCH@"
 
+     set -x
      case $os in
-     SLES15-SP3)
-	ibs_build_target=SLE_15_SP3
-	sle_module_version=15.3
+     SLES*-SP*)
+	eval $(echo "$os" | sed 's:SLES\(.*\)-SP\(.*\):MAJOR=\1 MINOR=\2:')
+	ibs_build_target=SLE_${MAJOR}_SP$MINOR
+	sle_module_version=$MAJOR.$MINOR
 	: ;;
+     Leap-*.*)
+	ibs_build_target="${os#Leap-}"
+	: ;;
+     *)
+	echo "Unidentified OS %s - don't know what IBS build target to use" >&2
+	exit 1;;
      esac
 
      case $os in
@@ -35,14 +43,18 @@ Vagrant.configure("2") do |config|
 
      zypper -n in -y wget strace
 
+     set -e
+
+     rpm --import https://download.opensuse.org/repositories/openSUSE:infrastructure/$ibs_build_target/repodata/repomd.xml.key
      zypper -n addrepo https://download.opensuse.org/repositories/openSUSE:infrastructure/$ibs_build_target/openSUSE:infrastructure.repo
      zypper -n refresh
-     zypper -n --gpg-auto-import-keys install ca-certificates-suse
+     zypper -n install ca-certificates-suse
 
-     zypper -n ar --no-gpgcheck https://download.suse.de/ibs/home:/okir:/selinux/$ibs_build_target selinux
-     zypper -n up -y --allow-vendor-change libselinux1 selinux-tools
-     zypper -n in -y --allow-vendor-change checkpolicy policycoreutils restorecond
-     zypper -n in -y --allow-vendor-change selinux-policy-targeted selinux-autorelabel
+     rpm --import https://download.suse.de/ibs/home:/okir:/selinux/$ibs_build_target/repodata/repomd.xml.key
+     zypper -n addrepo https://download.suse.de/ibs/home:/okir:/selinux/$ibs_build_target selinux
+     zypper -n update  -y --allow-vendor-change libselinux1 selinux-tools
+     zypper -n install -y --allow-vendor-change checkpolicy policycoreutils restorecond
+     zypper -n install -y --allow-vendor-change selinux-policy-targeted selinux-autorelabel
 
      echo "Updating kernel command line"
      for w in security=selinux selinux=1 enforcing=0 console=ttyS0; do
