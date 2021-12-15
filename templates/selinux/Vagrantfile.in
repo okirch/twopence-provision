@@ -66,7 +66,11 @@ Vagrant.configure("2") do |config|
 
      selinux-ready
 
-     # reboot
+     # Clear out any wicked state; that prevents clones of this node
+     # to starts asking for DHCP leaves with the same duuids
+     if [ -d /var/lib/wicked ]; then
+       rm -f /var/lib/wicked/*
+     fi
    SHELL
 
    config.vm.provision :shell do |shell|
