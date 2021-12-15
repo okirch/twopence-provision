@@ -236,7 +236,8 @@ class TestTopology:
 		self.persistentState = TopologyStatus(path)
 
 		# Write back persistent state if it does not exist.
-		self.saveStatus()
+		if not os.path.isfile(path):
+			self.saveStatus()
 
 	def configure(self, config):
 		config.validate()

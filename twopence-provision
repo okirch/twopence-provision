@@ -8,7 +8,9 @@
 ##################################################################
 
 import sys
+import os
 from _twopence.provision import *
+from _twopence.provision.topology import TopologyStatus
 
 global_config_files	= [
 	"twopence.conf",
@@ -55,7 +57,7 @@ class Action:
 			self._backend = Backend.create(bom.backend)
 		return self._backend
 
-	def loadConfig(self, validate = True):
+	def loadConfig(self, purpose = None):
 		if self._config:
 			return self._config
 
@@ -75,8 +77,8 @@ class Action:
 		for path in bom.config:
 			config.load(path)
 
-		if validate:
-			config.validate()
+		if purpose:
+			config.validate(purpose = purpose)
 
 		self._config = config
 		return config
@@ -85,7 +87,7 @@ class Action:
 		bom = self.bom
 
 		backend = self.backend
-		config = self.loadConfig()
+		config = self.loadConfig(purpose)
 
 		config.validate(purpose = purpose)
 
@@ -179,7 +181,7 @@ class ActionInit(Action):
 		bom.save()
 
 		try:
-			config = self.loadConfig(validate = False)
+			config = self.loadConfig(purpose = "init")
 		except ConfigError as e:
 			print("Error: the resulting configuration is not valid")
 			print(e)
@@ -199,11 +201,13 @@ class ActionBuild(Action):
 	def perform(self):
 		bom = self.bom
 
-		config = self.loadConfig(validate = False)
+		config = self.loadConfig(purpose = None)
 
 		build_config = "/usr/lib/twopence/provision/%s/build.conf" % self.target
 		if not config.load(build_config):
 			raise ValueError("Cannot find %s" % build_config)
+
+		config.validate(purpose = "building")
 
 		buildNode = config.findBuildNode()
 		if buildNode is None:
@@ -249,7 +253,7 @@ class ActionDestroy(Action):
 		self.force = args.force
 
 	def perform(self):
-		topology = self.createTopology()
+		topology = self.createTopology(purpose = "testing")
 		if not topology.detect():
 			verbose("Nothing to destroy")
 		else:
@@ -266,7 +270,7 @@ class ActionDestroy(Action):
 
 class ActionStatus(Action):
 	def perform(self):
-		topology = self.createTopology()
+		topology = self.createTopology(purpose = None)
 		if not topology.detect(detectNetwork = True):
 			verbose("No instances")
 		else:
@@ -296,13 +300,68 @@ class ActionShow(Action):
 		self.info_types = args.info_type
 
 	def perform(self):
-		topology = self.createTopology()
+		topology = self.createTopology(purpose = None)
 		for type in self.info_types:
 			if type == 'status-file':
 				st = topology.persistentState
 				print(st.path or "")
 			else:
 				raise ValueError("Unsupported info-type \"%s\"" % type)
+
+class ActionLogin(Action):
+	def __init__(self, args):
+		super().__init__(args)
+
+		if len(args.node) != 1:
+			raise ValueError("Unexpected number of arguments")
+
+		self.node = args.node[0]
+		self.use_ipv4 = None
+		self.use_ipv6 = None
+
+	def perform(self):
+		config = self.loadConfig(purpose = "login")
+
+		print(config.status)
+		if not config.status:
+			raise ValueError("no status.conf file found in workspace %s", args.workspace)
+
+		status = TopologyStatus(config.status)
+		node = status.getNodeState(self.node)
+
+		if self.use_ipv4:
+			address = node.ipv4_address
+		elif self.use_ipv6:
+			address = node.ipv6_address
+		else:
+			address = node.ipv4_address or node.ipv6_address
+
+		# The backend should really store the name of the default
+		# account in status.conf
+		user = None
+		if status.backend == 'vagrant':
+			user = 'vagrant'
+
+		if not user:
+			raise ValueError("Unable to determine login user name")
+
+		command = ["ssh",
+			# Do not pollute the user's .known_hosts file with address/key pairs that
+			# will change all the time, anyway
+			"-o", "UserKnownHostsFile=/dev/null",
+			# And don't ask about saving host keys to /dev/null ...
+			"-o", "StrictHostKeyChecking=no",
+			]
+		if node.keyfile:
+			command += ["-i", node.keyfile]
+
+
+		command.append("%s@%s" % (user, address))
+
+		cmdline = " ".join(command)
+		print("Now connect to %s" % instance)
+		print("  %s" % cmdline)
+		os.system(cmdline)
 
 def build_arg_parser():
 	import argparse
@@ -354,6 +413,11 @@ def build_arg_parser():
 	sp.set_defaults(action = ActionShow)
 	sp.add_argument('info_type', metavar='INFO-TYPE', nargs = '+',
 			help='info type to display (status-file, ...)')
+
+	sp = sub.add_parser('login', help = 'Log into the indicated node')
+	sp.set_defaults(action = ActionLogin)
+	sp.add_argument('node', metavar='NODE-NAME', nargs = 1,
+			help='the node name of the system to connect to')
 
 	sp = sub.add_parser('help', help = 'Print this message')
 	sp.set_defaults(action = ActionHelp)
