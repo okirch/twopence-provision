@@ -14,23 +14,37 @@ from .backend import Backend
 from .runner import Runner
 from .instance import *
 from .provision import *
-from .config import Config, Configurable
+from .config import Config, Configurable, ConfigError
 
 class VagrantBoxInfo:
-	def __init__(self, name = None, version = None, provider = None, url = None):
+	ORIGIN_LOCAL = "local"
+	ORIGIN_VAGRANTCLOUD = "vagrant"
+
+	def __init__(self, name = None, version = None, provider = None, url = None, origin = None):
 		self.name = name
 		self.version = version
 		self.provider = provider
 		self.url = url
+		self.origin = origin or self.ORIGIN_LOCAL
 
 	def __eq__(self, other):
 		if not isinstance(other, self.__class__):
 			return False
 
-		return self.name == other.name and self.version == other.version
+		if self.name != other.name:
+			return False
+
+		if self.version == other.version:
+			return True
+
+		if self.origin == self.ORIGIN_VAGRANTCLOUD or \
+		   other.origin == self.ORIGIN_VAGRANTCLOUD:
+			return True
+
+		return False
 
 	def __str__(self):
-		return "Box(%s, version=%s)" % (self.name, self.version)
+		return "Box(%s, version=%s, origin=%s)" % (self.name, self.version, self.origin)
 
 class VagrantBoxMeta:
 	def __init__(self, name):
@@ -38,8 +52,22 @@ class VagrantBoxMeta:
 		self.boxes = []
 
 	@staticmethod
-	def load(url):
-		if not url.startswith("/"):
+	def load(name, url):
+		if url is None:
+			return None
+
+		if url.startswith("vagrant:"):
+			remote = url[8:]
+			if remote != name:
+				raise ConfigError("Error in definition of vagrant image %s: image name must equal remote name %s" % (
+							name, remote))
+
+			result = VagrantBoxMeta(name)
+			result.addBox(version = "0", url = url[8:], provider = "libvirt",
+					origin = VagrantBoxInfo.ORIGIN_VAGRANTCLOUD)
+			return result
+
+		if url is None or not url.startswith("/"):
 			return None
 
 		if not os.path.isfile(url):
@@ -60,7 +88,8 @@ class VagrantBoxMeta:
 			for actual_version in version.get('providers') or []:
 				result.addBox(version = version.get('version'),
 						provider = actual_version.get('name'),
-						url = actual_version.get('url')
+						url = actual_version.get('url'),
+						origin = VagrantBoxInfo.ORIGIN_LOCAL
 						)
 
 		return result
@@ -216,12 +245,13 @@ class VagrantBackend(Backend):
 
 	def identifyImageToDownload(self, instanceConfig):
 		vagrantNode = instanceConfig.vagrant
+		want = None
 
 		known = self.listBoxes()
 
 		# If the image does not come with a .json meta file, check whether
 		# we have an unversioned image of that name
-		meta = VagrantBoxMeta.load(vagrantNode.url)
+		meta = VagrantBoxMeta.load(vagrantNode.image, vagrantNode.url)
 		if meta is None:
 			have = known.find(vagrantNode.image, version = None)
 			if have:
@@ -230,13 +260,16 @@ class VagrantBackend(Backend):
 				return None
 		else:
 			want = meta.getLatest()
+			if False and want and want.origin == VagrantBoxInfo.ORIGIN_VAGRANTCLOUD:
+				verbose("image resides on vagrant cloud; should do an update")
+				return want
+
 			if want in known:
 				debug("No need to download image %s (ver %s); already present" % (
 						want.name, want.version))
 				return None
 
 		return VagrantBoxInfo(name = vagrantNode.image, url = vagrantNode.url, provider = "libvirt")
-		return download
 
 	def downloadImage(self, workspace, instanceConfig):
 		download = self.identifyImageToDownload(instanceConfig)
@@ -475,7 +508,7 @@ class VagrantBackend(Backend):
 		status = self.runShellCmd("vagrant box --machine-readable list", quiet = True)
 		if not status:
 			# We could fall back to using virsh directly...
-			raise ValueError("%s: vagrant box list failed: %s" % (instance.name, status))
+			raise ValueError("vagrant box list failed: %s" % (status))
 
 		self.listing = VagrantBoxListing()
 		current = None
@@ -503,8 +536,8 @@ class VagrantBackend(Backend):
 	##################################################################
 	def addImage(self, box):
 		verbose("Adding vagrant box %s from %s" % (box, box.url))
-		cmd = "vagrant --no-tty box add --name \"%s\" \"%s\"" % (box.name, box.url)
-		if not self.runShellCmd(cmd):
+		cmd = "vagrant --no-tty box add --name \"%s\" --provider %s \"%s\"" % (box.name, box.provider, box.url)
+		if not self.runShellCmd(cmd, timeout = 60):
 			raise ValueError("Failed to add box %s from %s" % (box.name, box.url))
 
 		# Clear any cached listing
