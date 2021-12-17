@@ -18,6 +18,7 @@ install::
 	mkdir -p $(DESTDIR)$(TWP_ETCDIR)
 	@install -vm 644 etc/*.conf $(DESTDIR)$(TWP_ETCDIR)
 	@cp -av etc/platform.d $(DESTDIR)$(TWP_ETCDIR)
+	@cp -av etc/resource.d $(DESTDIR)$(TWP_ETCDIR)
 	mkdir -p $(DESTDIR)$(TWP_LIBDIR)
 	@install -vm 444 templates/Vagrantfile.in $(DESTDIR)$(TWP_LIBDIR)
 	cp -a templates/selinux $(DESTDIR)$(TWP_LIBDIR)
