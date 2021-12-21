@@ -105,6 +105,7 @@ class TopologyStatus:
 			self._backend = None
 			self._testcase = None
 			self._logspace = None
+			self._parameters = {}
 			self._nodes = {}
 
 		self.tree = self.data.tree()
@@ -123,6 +124,12 @@ class TopologyStatus:
 		self._nodes = {}
 		for name in self.tree.get_children("node"):
 			self._nodes[name] = self.NodeStatus(self.tree.get_child("node", name))
+
+		self._parameters = {}
+		child = self.tree.get_child("parameters")
+		if child:
+			for name in child.get_attributes():
+				self._parameters[name] = child.get_value(name)
 
 	@property
 	def backend(self):
@@ -163,6 +170,25 @@ class TopologyStatus:
 		if self._logspace != value:
 			self.tree.set_value("logspace", value)
 			self._logspace = value
+
+	@property
+	def parameters(self):
+		return self._parameters
+
+	@parameters.setter
+	def parameters(self, value_dict):
+		if self._parameters != value_dict:
+			# If we have a parameters section already, drop it...
+			child = self.tree.get_child("parameters")
+			if child is not None:
+				self.tree.drop_child(child)
+
+			# ... then (re)create it and add all the key/value pairs.
+			child = self.tree.add_child("parameters")
+			for name, value in value_dict.items():
+				child.set_value(name, value)
+
+			self._parameters = value_dict
 
 	@property
 	def nodes(self):
@@ -217,6 +243,7 @@ class TestTopology:
 		self.testcase = None
 		self.logspace = None
 		self.platform = None
+		self.parameters = {}
 		self.persistentState = None
 		self.persistentStatePath = None
 
@@ -250,6 +277,9 @@ class TestTopology:
 		for node in config.nodes:
 			self.createInstanceConfig(node, config)
 
+		if config.parameters:
+			self.parameters.update(config.parameters)
+
 		config.configureBackend(self.backend)
 
 	def saveStatus(self):
@@ -257,6 +287,7 @@ class TestTopology:
 			self.persistentState.backend = self.backend.name
 			self.persistentState.testcase = self.testcase
 			self.persistentState.logspace = self.logspace
+			self.persistentState.parameters = self.parameters
 			self.persistentState.save()
 
 	def cleanupStatus(self):

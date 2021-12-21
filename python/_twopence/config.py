@@ -595,6 +595,7 @@ class Config(Configurable):
 		self._nodes = ConfigDict("node", Node, verbose = True)
 		self._builds = ConfigDict("build", Build, verbose = True)
 		self._repositories = []
+		self._parameters = {}
 
 		self.info = ExtraInfo()
 
@@ -641,6 +642,13 @@ class Config(Configurable):
 
 		# Extract data from global info "blah" { ... } groups
 		self.info.configure(tree)
+
+		# commonly, parameters are defined in testrun.conf, but
+		# the may also come from any other config file.
+		child = tree.get_child("parameters")
+		if child:
+			for name in child.get_attributes():
+				self._parameters[name] = child.get_value(name)
 
 	def validate(self, purpose = None):
 		if purpose == "testing":
@@ -691,6 +699,15 @@ class Config(Configurable):
 
 	def getBuild(self, name):
 		return self._builds.get(name)
+
+	@property
+	def parameters(self):
+		return self._parameters
+
+	@parameters.setter
+	def parameters(self, value):
+		assert(isinstance(value, dict))
+		self._parameters.update(value)
 
 	def configureBackend(self, backend):
 		for config in self._backends.savedConfigs(backend.name):
