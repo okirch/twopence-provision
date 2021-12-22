@@ -84,8 +84,6 @@ class Action:
 		return config
 
 	def createTopology(self, purpose = None):
-		bom = self.bom
-
 		backend = self.backend
 		config = self.loadConfig(purpose)
 
@@ -359,7 +357,7 @@ class ActionLogin(Action):
 		command.append("%s@%s" % (user, address))
 
 		cmdline = " ".join(command)
-		print("Now connect to %s" % instance)
+		print("Now connect to %s" % address)
 		print("  %s" % cmdline)
 		os.system(cmdline)
 
