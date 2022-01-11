@@ -41,15 +41,13 @@ class Zypper(Packager):
 		return "zypper in -y " + " ".join(pkg_list)
 
 class Provisioner:
-	def processTemplate(self, nodeConfig, templatePath, outputPath, extraCommands = []):
+	def processTemplate(self, nodeConfig, templatePath, outputPath, extraData = None):
 		if not templatePath.startswith('/'):
 			templatePath = os.path.join("/usr/lib/twopence/provision", templatePath)
 
 		print("Creating %s from %s" % (outputPath, templatePath))
 
-		data = self.nodeConfigAsDict(nodeConfig)
-
-		data['COMMANDS'] += extraCommands
+		data = self.nodeConfigAsDict(nodeConfig, extraData)
 
 		tmpf = open(templatePath, "r")
 		outf = open(outputPath, "w")
@@ -94,7 +92,7 @@ class Provisioner:
 			output += line
 			outf.write(output)
 
-	def nodeConfigAsDict(self, nodeConfig, list_sepa = " "):
+	def nodeConfigAsDict(self, nodeConfig, extraData, list_sepa = " "):
 		packager = Packager.forPlatform(nodeConfig.vendor, nodeConfig.os)
 
 		d = {}
@@ -144,6 +142,14 @@ class Provisioner:
 
 		self.extraInfoToDict(d, nodeConfig.info, "info")
 		self.extraInfoToDict(d, nodeConfig.platform.info, "platform_info")
+
+		if extraData is not None:
+			for name, value in extraData.items():
+				existing = d.get(name)
+				if type(existing) == list:
+					existing += value
+				else:
+					d[name] = value
 
 		return d
 

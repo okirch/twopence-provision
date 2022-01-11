@@ -302,7 +302,9 @@ class VagrantBackend(Backend):
 
 		path = os.path.join(workspace, instanceConfig.name, "Vagrantfile")
 
-		extraCommands = [
+		extraData = {}
+
+		extraData['COMMANDS'] = [
 			# This tells the twopence server where to listen for incoming
 			# connections.
 			"echo 'port tcp { port 4000; }' >/etc/twopence/ports.conf",
@@ -317,7 +319,7 @@ class VagrantBackend(Backend):
 		instanceConfig.platform.image = vagrantNode.image
 		debug("Using vagrant box %s" % instanceConfig.image)
 
-		self.provisioner.processTemplate(instanceConfig, template, path, extraCommands)
+		self.provisioner.processTemplate(instanceConfig, template, path, extraData)
 
 		return VagrantInstance(instanceConfig, instanceWorkspace, savedInstanceState)
 
