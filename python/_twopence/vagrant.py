@@ -15,6 +15,7 @@ from .runner import Runner
 from .instance import *
 from .provision import *
 from .config import Config, Configurable, ConfigError
+from .util import DottedNumericVersion
 
 VagrantRebootBlock = '''
   config.vm.provision :shell do |shell|
@@ -37,20 +38,29 @@ class VagrantBoxInfo:
 
 	def __init__(self, name = None, version = None, provider = None, url = None, origin = None):
 		self.name = name
-		self.version = version
+		self._version = DottedNumericVersion(version)
 		self.provider = provider
 		self.url = url
 		self.origin = origin or self.ORIGIN_LOCAL
 
-	def __eq__(self, other):
+	@property
+	def version(self):
+		return str(self._version)
+
+	@version.setter
+	def version(self, value):
+		self._version = DottedNumericVersion(value)
+
+	def __str__(self):
+		return "vagrant image %s/%s (origin %s)" % (self.name, self.version, self.origin)
+
+	# practically the same, except for the version
+	def similar(self, other):
 		if not isinstance(other, self.__class__):
 			return False
 
 		if self.name != other.name:
 			return False
-
-		if self.version == other.version:
-			return True
 
 		if self.origin == self.ORIGIN_VAGRANTCLOUD or \
 		   other.origin == self.ORIGIN_VAGRANTCLOUD:
@@ -58,8 +68,20 @@ class VagrantBoxInfo:
 
 		return False
 
-	def __str__(self):
-		return "Box(%s, version=%s, origin=%s)" % (self.name, self.version, self.origin)
+	def __eq__(self, other):
+		if not self.similar(other):
+			return False
+		return self._version == other._version
+
+	def __lt__(self, other):
+		if not self.similar(other):
+			return False
+		return self._version < other._version
+
+	def __le__(self, other):
+		if not self.similar(other):
+			return False
+		return self._version <= other._version
 
 class VagrantBoxMeta:
 	def __init__(self, name):
@@ -119,7 +141,7 @@ class VagrantBoxMeta:
 		for box in self.boxes:
 			if box.provider != provider:
 				continue
-			if best is None or best.version < box.version:
+			if best is None or best < box:
 				best = box
 		return best
 
