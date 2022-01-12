@@ -9,6 +9,10 @@
 from .config import Configurable
 
 class Backend(Configurable):
+	def __init__(self):
+		# By default, auto-update images that we get from remote
+		self.auto_update = True
+
 	@staticmethod
 	def create(family):
 		if family == 'vagrant':

@@ -8,6 +8,7 @@
 import os
 import json
 import shutil
+import copy
 
 from .logging import *
 from .backend import Backend
@@ -62,6 +63,9 @@ class VagrantBoxInfo:
 		if self.name != other.name:
 			return False
 
+		if self.origin == other.origin:
+			return True
+
 		if self.origin == self.ORIGIN_VAGRANTCLOUD or \
 		   other.origin == self.ORIGIN_VAGRANTCLOUD:
 			return True
@@ -84,29 +88,79 @@ class VagrantBoxInfo:
 		return self._version <= other._version
 
 class VagrantBoxMeta:
-	def __init__(self, name):
+	def __init__(self, name, url = None, provider = "libvirt"):
 		self.name = name
+		self.base_url = url
+		self.origin = None
+		self.provider = provider
+		self.downloadUrl = None
 		self.boxes = []
 
-	@staticmethod
-	def load(name, url):
-		if url is None:
-			return None
-
 		if url.startswith("vagrant:"):
+			self.origin = VagrantBoxInfo.ORIGIN_VAGRANTCLOUD
+
 			remote = url[8:]
 			if remote != name:
 				raise ConfigError("Error in definition of vagrant image %s: image name must equal remote name %s" % (
 							name, remote))
 
-			result = VagrantBoxMeta(name)
-			result.addBox(version = "0", url = url[8:], provider = "libvirt",
-					origin = VagrantBoxInfo.ORIGIN_VAGRANTCLOUD)
-			return result
+			debug("URL %s refers to image on vagrantcloud" % url)
+			data = self.tryVagrantCloud(remote)
+			if data is None:
+				verbose("unable to retrieve image from \"%s\" - faking it" % url)
 
-		if url is None or not url.startswith("/"):
-			return None
+			self.downloadUrl = remote
+		elif url and url.startswith("/"):
+			self.origin = VagrantBoxInfo.ORIGIN_LOCAL
 
+			debug("URL %s refers to local image" % url)
+			data = self.tryLocal(url)
+			if data is None:
+				return None
+
+			self.downloadUrl = url
+		else:
+			raise ConfigError("vagrant: don't know how to handle image url %s" % url)
+
+		if name is None:
+			name = data.get('name')
+			if not name:
+				raise ConfigError("Image at %s does not provide a name" % url)
+			self.name = name
+
+		for version in data.get('versions') or []:
+			for actual_version in version.get('providers') or []:
+				self.addBox(version = version.get('version'),
+						provider = actual_version.get('name'),
+						url = actual_version.get('url')
+						)
+
+	@staticmethod
+	def load(name, url):
+		debug("VagrantBoxMeta.load(%s, %s)" % (name, url))
+		return VagrantBoxMeta(name, url)
+
+	def addBox(self, **kwargs):
+		box = VagrantBoxInfo(self.name, **kwargs, origin = self.origin)
+		self.boxes.append(box)
+		return box
+
+	def getLatestVersion(self, provider = "libvirt"):
+		best = None
+		for box in self.boxes:
+			if box.provider != provider:
+				continue
+			if best is None or best < box:
+				best = box
+		return best
+
+	def getDownloadFor(self, box):
+		if self.downloadUrl:
+			box = copy.copy(box)
+			box.url = self.downloadUrl
+		return box
+
+	def tryLocal(self, url):
 		if not os.path.isfile(url):
 			return None
 
@@ -116,34 +170,23 @@ class VagrantBoxMeta:
 			except:
 				return None
 
-		name = data.get('name')
-		if not name:
+		return data
+
+	def tryVagrantCloud(self, name):
+		import requests
+
+		url = "https://vagrantcloud.com/%s" % name
+		resp = requests.get(url)
+		if not resp.ok:
+			warning("Failed to download %s: %s" % (url, resp.reason))
 			return None
 
-		result = VagrantBoxMeta(name)
-		for version in data.get('versions') or []:
-			for actual_version in version.get('providers') or []:
-				result.addBox(version = version.get('version'),
-						provider = actual_version.get('name'),
-						url = actual_version.get('url'),
-						origin = VagrantBoxInfo.ORIGIN_LOCAL
-						)
+		content_type = resp.headers['content-type'].split(';')[0]
+		if content_type != 'application/json':
+			warning("Bad content type from %s: %s" % (url, content_type))
+			return None
 
-		return result
-
-	def addBox(self, **kwargs):
-		box = VagrantBoxInfo(self.name, **kwargs)
-		self.boxes.append(box)
-		return box
-
-	def getLatest(self, provider = "libvirt"):
-		best = None
-		for box in self.boxes:
-			if box.provider != provider:
-				continue
-			if best is None or best < box:
-				best = box
-		return best
+		return resp.json()
 
 class VagrantBoxListing:
 	def __init__(self):
@@ -209,6 +252,7 @@ class VagrantBackend(Backend):
 
 	def __init__(self):
 		debug("Created vagrant backend")
+		super().__init__()
 
 		self.template = None
 		self.runner = Runner()
@@ -282,38 +326,42 @@ class VagrantBackend(Backend):
 
 	def identifyImageToDownload(self, instanceConfig):
 		vagrantNode = instanceConfig.vagrant
-		want = None
 
 		known = self.listBoxes()
+
+		# See if we have any version of that image
+		have = known.find(vagrantNode.image, version = None)
 
 		# If the image does not come with a .json meta file, check whether
 		# we have an unversioned image of that name
 		meta = VagrantBoxMeta.load(vagrantNode.image, vagrantNode.url)
 		if meta is None:
-			have = known.find(vagrantNode.image, version = None)
 			if have:
 				debug("No need to download image %s; unversioned image already present" % (
 						have.name))
 				return None
 		else:
-			want = meta.getLatest()
-			if False and want and want.origin == VagrantBoxInfo.ORIGIN_VAGRANTCLOUD:
-				verbose("image resides on vagrant cloud; should do an update")
-				return want
+			want = meta.getLatestVersion()
 
 			if want in known:
-				debug("No need to download image %s (ver %s); already present" % (
-						want.name, want.version))
+				debug("No need to download %s; already present" % want)
 				return None
+
+			if not self.auto_update:
+				if have is not None:
+					debug("We have %s; latest version is %s (not updating)" % (have, want))
+					return None
+
+			if want:
+				return meta.getDownloadFor(want)
 
 		return VagrantBoxInfo(name = vagrantNode.image, url = vagrantNode.url, provider = "libvirt")
 
 	def downloadImage(self, workspace, instanceConfig):
 		download = self.identifyImageToDownload(instanceConfig)
-		if download is None:
-			return True
+		if download:
+			self.addImage(download)
 
-		self.addImage(download)
 		return True
 
 	def prepareInstance(self, workspace, instanceConfig, savedInstanceState):
@@ -509,8 +557,6 @@ class VagrantBackend(Backend):
 		status = self.runVagrant("destroy -f", instance, timeout = 30)
 		if not status:
 			raise ValueError("%s: vagrant destroy failed: %s" % (instance.name, status))
-
-		import shutil
 
 		shutil.rmtree(instance.workspace)
 		instance.dead = True

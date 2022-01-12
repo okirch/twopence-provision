@@ -50,7 +50,7 @@ class DottedNumericVersion:
 			self._parsed = [int(_) for _ in version_string.split('.')]
 
 	def __str__(self):
-		return self._value
+		return str(self._value)
 
 	def __eq__(self, other):
 		return self._value == other._value

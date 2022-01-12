@@ -33,6 +33,8 @@ class Action:
 		self._backend = None
 		self._config = None
 
+		self._auto_update_images = not args.no_auto_update_images
+
 	def error(self, msg):
 		print("Error: " + msg, file = sys.stderr)
 
@@ -55,6 +57,9 @@ class Action:
 		if self._backend is None:
 			bom = self.bom
 			self._backend = Backend.create(bom.backend)
+
+			if not self._auto_update_images:
+				self._backend.auto_update = False
 		return self._backend
 
 	def loadConfig(self, purpose = None):
@@ -382,6 +387,8 @@ def build_arg_parser():
 			    help = 'the directory to use as workspace')
 	parser.add_argument('--quiet', default = False, action = 'store_true',
 			    help = 'Disable most output')
+	parser.add_argument('--no-auto-update-images', default = False, action = 'store_true',
+			    help = 'Do not update base images automatically (default for eg public vagrant images)')
 	parser.add_argument('--status',
 			    help = 'path to the file to store status info [default $workspace/status.conf]')
 	parser.add_argument('--debug', default = False, action = 'store_true',
