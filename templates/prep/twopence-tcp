@@ -1,0 +1,8 @@
+#
+# Tell the twopence server to listen for incoming connections
+# on TCP port 4000.
+# Only do this if twopence has been installed.
+#
+if [ -d /etc/twopence ]; then
+	echo 'port tcp { port 4000; }' >/etc/twopence/ports.conf
+fi

@@ -379,12 +379,12 @@ class TestTopology:
 
 			self.saveStatus()
 
-	def package(self, nodeName):
+	def package(self, nodeName, packageName):
 		instance = self.getInstance(nodeName)
 		if instance is None:
 			raise ValueError("Cannot package %s: instance not found" % nodeName)
 
-		return self.backend.packageInstance(instance)
+		return self.backend.packageInstance(instance, packageName)
 
 	def destroy(self):
 		for instance in self.instances:

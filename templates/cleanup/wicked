@@ -1,0 +1,5 @@
+# Clear out any wicked state. This prevents clones of this node
+# to starts asking for DHCP leases with the same duuids
+if [ -d /var/lib/wicked ]; then
+	rm -f /var/lib/wicked/*
+fi   

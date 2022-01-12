@@ -192,30 +192,43 @@ class ActionBuild(Action):
 		super().__init__(args)
 
 		self.auto_destroy = args.auto_destroy
+
+		if not args.base_platform:
+			self.fatal("Missing --base-platform")
+		self.base_platform = args.base_platform
+
+		self.features = args.feature
+
 		if not args.target:
 			self.fatal("Missing argument: name of target build")
 		self.target = args.target
+
+	def displayBuildOrPlatform(self, desc, p, indent = ""):
+		print("%s%s = %s" % (indent, desc, p))
+
+		indent += "  "
+		for stage in p.stages.values():
+			print("%sStage %s%s" % (indent, stage.name, stage.reboot and " (reboot)" or ""))
+			for script in stage.run:
+				print("%s  run %s" % (indent, script))
 
 	def perform(self):
 		bom = self.bom
 
 		config = self.loadConfig(purpose = None)
 
-		build_config = "/usr/lib/twopence/provision/%s/build.conf" % self.target
-		if not config.load(build_config):
-			raise ValueError("Cannot find %s" % build_config)
+		base_platform = config.getPlatform(self.base_platform)
+
+		if False:
+			self.displayBuildOrPlatform("base platform", base_platform)
+			for name in self.features:
+				self.displayBuildOrPlatform("build", config.getBuild(name))
+
+		buildNode = config.createNode("build")
+		buildNode.platform = self.base_platform
+		buildNode.build = self.features
 
 		config.validate(purpose = "building")
-
-		buildNode = config.findBuildNode()
-		if buildNode is None:
-			raise ValueError("Cannot find the build node")
-
-		build = config.getBuild(buildNode.build)
-		if not build:
-			raise ValueError("Cannot find a valid build description")
-
-		verbose("Using %s" % build)
 
 		# FIXME: hack
 		config.testcase = "build"
@@ -231,7 +244,7 @@ class ActionBuild(Action):
 
 		# Now package up the image and all the ancillary information, like
 		# ssh keys and the platform .config file describing the result.
-		topology.package(buildNode.name)
+		topology.package(buildNode.name, self.target)
 
 		self.destroyTopology(topology)
 
@@ -389,6 +402,10 @@ def build_arg_parser():
 	sp.set_defaults(action = ActionBuild)
 	sp.add_argument('--auto-destroy', default = False, action = 'store_true',
 			help = 'if one or more of the requested nodes are running, destroy them')
+	sp.add_argument('--base-platform',
+			help = 'the name of the base platform to use')
+	sp.add_argument('--feature', action = 'append', default = [],
+			help = 'build feature to select')
 	sp.add_argument('target', metavar='TARGET', nargs='?',
 			help = 'name of the target image to be built')
 

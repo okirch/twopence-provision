@@ -1,4 +1,5 @@
 .?*
+*.tar.bz2
 Make.defs
 python/_twopence/paths.py
 __pycache__

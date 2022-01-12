@@ -1,0 +1,9 @@
+#
+# This script snippet enables additional repositories with
+# packages patched for SELinux.
+#
+rpm --import https://download.suse.de/ibs/home:/okir:/selinux/$ibs_build_target/repodata/repomd.xml.key
+zypper -n addrepo https://download.suse.de/ibs/home:/okir:/selinux/$ibs_build_target selinux
+zypper -n update  -y --allow-vendor-change libselinux1 selinux-tools
+zypper -n install -y --allow-vendor-change checkpolicy policycoreutils restorecond
+zypper -n install -y --allow-vendor-change selinux-policy-targeted selinux-autorelabel

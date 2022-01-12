@@ -16,6 +16,21 @@ from .instance import *
 from .provision import *
 from .config import Config, Configurable, ConfigError
 
+VagrantRebootBlock = '''
+  config.vm.provision :shell do |shell|
+    shell.privileged = true
+    shell.inline = 'echo rebooting'
+    shell.reboot = true
+  end
+'''
+
+VagrantShellHeader = '''
+  config.vm.provision "shell", inline: <<-SHELL
+'''
+VagrantShellTrailer = '''
+  SHELL
+'''
+
 class VagrantBoxInfo:
 	ORIGIN_LOCAL = "local"
 	ORIGIN_VAGRANTCLOUD = "vagrant"
@@ -304,12 +319,13 @@ class VagrantBackend(Backend):
 
 		extraData = {}
 
-		extraData['COMMANDS'] = [
-			# This tells the twopence server where to listen for incoming
-			# connections.
-			"echo 'port tcp { port 4000; }' >/etc/twopence/ports.conf",
-#			"rm -f /etc/twopence/twopence.conf",
-		]
+		# instanceConfig gives us a list of scriptlets for provisioning.
+		# We turn these into a set of config.vm.provision blocks for the
+		# Vagrantfile
+		provisioning = self.buildProvisioning(instanceConfig)
+		extraData["VAGRANT_PROVISION_STAGES"] = "\n".join(provisioning)
+
+		extraData["VAGRANT_MACHINE_CONFIG"] = self.buildMachineConfig(instanceConfig)
 
 		vagrantNode = instanceConfig.vagrant
 
@@ -322,6 +338,50 @@ class VagrantBackend(Backend):
 		self.provisioner.processTemplate(instanceConfig, template, path, extraData)
 
 		return VagrantInstance(instanceConfig, instanceWorkspace, savedInstanceState)
+
+	def buildProvisioning(self, instanceConfig):
+		# Add backend specific provisioning commands
+		pstage = instanceConfig.createStage("provision")
+		pstage.zap()
+
+		# This tells the twopence server where to listen for incoming
+		# connections.
+		pstage.run.append("twopence-tcp")
+
+		result = []
+		for s in instanceConfig.cookedStages():
+			formatted = ""
+
+			if s.reboot:
+				formatted += VagrantRebootBlock
+			formatted += VagrantShellHeader
+			formatted += s.format(indent = "    ")
+			formatted += VagrantShellTrailer
+			result.append(formatted)
+
+		return result
+
+	def buildMachineConfig(self, instanceConfig):
+		def format_string_attr(ruby_var_name, attr_name):
+			object = instanceConfig
+			for n in attr_name.split('.'):
+				object = getattr(object, n, None)
+				if object is None:
+					return
+
+			assert(type(object) == str)
+			result.append("%s = '%s'" % (ruby_var_name, object))
+
+		result = []
+		format_string_attr("config.vm.box", "vagrant.image")
+		format_string_attr("config.vm.hostname", "name")
+		format_string_attr("config.ssh.private_key_path", "keyfile")
+		format_string_attr("twopence_platform", "platform.name")
+		format_string_attr("twopence_vendor", "platform.vendor")
+		format_string_attr("twopence_os", "platform.os")
+		format_string_attr("twopence_arch", "platform.arch")
+
+		return result
 
 	def startInstance(self, instance):
 		if instance.running:
@@ -475,9 +535,10 @@ class VagrantBackend(Backend):
 		# Copy the json file from workspace to ~/.twopence/data/vagrant/
 		return platform.saveImage("vagrant", metaPath)
 
-	def packageInstance(self, instance):
+	def packageInstance(self, instance, packageName):
 		assert(instance.config.buildResult)
 		platform = instance.config.buildResult
+		platform.name = packageName
 
 		imagePath = self.saveInstanceImage(instance, platform)
 		metaPath = self.saveInstanceMeta(instance, platform, imagePath)

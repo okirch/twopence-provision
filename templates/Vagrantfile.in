@@ -13,8 +13,7 @@ features = Array[
 # backwards compatibility). Please don't change it unless you know what
 # you're doing.
 Vagrant.configure("2") do |config|
-  config.vm.box = "@IMAGE@"
-  config.vm.hostname = "@HOSTNAME@"
+  @VAGRANT_MACHINE_CONFIG@
 
   # Disable automatic box update checking.
   config.vm.box_check_update = false
@@ -49,39 +48,7 @@ Vagrant.configure("2") do |config|
 
   config.vm.allow_hosts_modification = true
 
-  config.ssh.private_key_path = '@KEYFILE@'
-
-  # Enable provisioning with a shell script. Additional provisioners such as
-  # Ansible, Chef, Docker, Puppet and Salt are also available. Please see the
-  # documentation for more information about their specific syntax and use.
-  config.vm.provision "shell", inline: <<-SHELL
-    set -e
-    set -x
-
-    # add repos, if any
-    @ADD_REPOSITORIES@
-
-    # install packages, if any
-    @INSTALL_PACKAGES@
-
-    @COMMANDS@
-
-    for name in @START@; do
-	systemctl start $name.service
-	# in case we reboot below...
-	systemctl enable $name.service
-    done
-
-    echo "Success."
-  SHELL
-
-  if features.include? 'selinux'
-    config.vm.provision "shell", inline: <<-SHELL
-      # Normally, rpm seems to do the labelling for us
-      restorecon -v /
-    SHELL
-    # features << 'reboot'
-  end
+  @VAGRANT_PROVISION_STAGES@
 
   if features.include? 'reboot'
     config.vm.provision :shell do |shell|

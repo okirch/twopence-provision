@@ -1,0 +1,8 @@
+#
+# Enable and start service(s) as requested by< the user
+#
+for name in $TWOPENCE_START_SERVICES; do
+	systemctl start $name.service
+	systemctl enable $name.service
+done
+

@@ -27,3 +27,6 @@ def debug(msg):
 def verbose(msg):
 	if opt_verbose >= 1:
 		print("%s" % msg)
+
+def warning(msg):
+	print("WARNING: %s" % msg)

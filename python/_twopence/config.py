@@ -15,15 +15,26 @@ import shutil
 from .instance import *
 from .logging import *
 from .paths import *
+from .provision import ProvisioningScriptCollection, ProvisioningShellEnvironment
 
 class ConfigError(Exception):
 	pass
+
+def typeconv_str_to_bool(value):
+	if value is None:
+		return False
+	value = value.lower()
+	if value in ('true', 'yes', 'on', '1'):
+		return True
+	if value in ('false', 'no', 'off', '0'):
+		return False
+	raise ValueError("Unable to convert \"%s\" to boolean" % value)
 
 ##################################################################
 # This is a helper class that simplifies how we populate a
 # python object from a curly config file.
 ##################################################################
-class Configurable:
+class Configurable(object):
 	info_attrs = []
 
 	def update_value(self, config, attr_name, config_key = None, typeconv = None):
@@ -78,6 +89,12 @@ class ConfigDict(dict):
 			item = self.item_class(name)
 			self[name] = item
 		return item
+
+	def add(self, obj):
+		assert(isinstance(obj, self.item_class))
+		if obj.name in self:
+			raise KeyError("Detected duplicate object name %s" % obj.name)
+		self[obj.name] = obj
 
 	def configure(self, config):
 		result = []
@@ -149,6 +166,19 @@ class BackendDict(ConfigDict):
 			return saved.configs
 		return []
 
+	def merge(self, other):
+		assert(isinstance(other, BackendDict))
+		for be in other.values():
+			self.mergeSavedConfig(be)
+
+	def mergeSavedConfig(self, other):
+		assert(isinstance(other, SavedBackendConfig))
+		if not other.configs:
+			return
+
+		saved = self.create(other.name)
+		saved.configs = other.configs + saved.configs
+
 class Repository(Configurable):
 	info_attrs = ['name', 'url']
 
@@ -156,6 +186,8 @@ class Repository(Configurable):
 		self.name = name
 		self.url = None
 		self.keyfile = None
+		self.enabled = False
+		self.active = False
 
 	def configure(self, config):
 		if not config:
@@ -163,12 +195,16 @@ class Repository(Configurable):
 
 		self.update_value(config, 'url')
 		self.update_value(config, 'keyfile')
+		self.update_value(config, 'enabled', typeconv = typeconv_str_to_bool)
+		self.update_value(config, 'active', typeconv = typeconv_str_to_bool)
 
 	def publish(self, config):
 		if self.url:
 			config.set_value("url", self.url)
 		if self.keyfile:
 			config.set_value("keyfile", self.keyfile)
+		config.set_value("enabled", str(self.enabled))
+		config.set_value("active", str(self.active))
 
 class Image:
 	def __init__(self, name, backends):
@@ -202,8 +238,106 @@ class Imageset(Configurable):
 	def getArchitecture(self, name):
 		return self.architectures.get(name)
 
+class BuildStage(Configurable):
+	info_attrs = ['name', 'reboot', 'run', 'only']
+
+	defaultOrder = {
+		'prep'		: 0,
+		'install'	: 1,
+		'provision'	: 2,
+		'build'		: 10,
+		'other'		: 50,
+		'cleanup'	: 100,
+	}
+	defaultCategory = {
+		'prep'		: 'prep',
+		'install'	: 'prep',
+		'provision'	: 'prep',
+		'build'		: 'build',
+		'cleanup'	: 'cleanup',
+	}
+
+	def __init__(self, name, category = None, order = None):
+		self.name = name
+		self.run = []
+		self.commands = []
+		self.only = None
+		self.reboot = False
+
+		if category is None:
+			category = self.defaultCategory.get(name)
+		if category is None:
+			category = "other"
+		self.category = category
+
+		if order is None:
+			order = self.defaultOrder.get(self.name)
+		if order is None:
+			order = self.defaultOrder.get(self.category)
+		if order is None:
+			order = 50
+		self.order = order
+
+	def zap(self):
+		self.run = []
+		self.reboot = False
+
+	def configure(self, config):
+		self.update_list(config, 'run')
+		self.update_value(config, 'order', typeconv = int)
+		self.update_value(config, 'reboot', typeconv = typeconv_str_to_bool)
+		self.update_value(config, 'only')
+
+		self.validate()
+
+	def publish(self, config):
+		if self.run:
+			config.set_value("run", self.run)
+		if self.order:
+			config.set_value("order", str(self.order))
+		config.set_value("reboot", str(self.reboot))
+		if self.only:
+			config.set_value("only", self.only)
+
+	def merge(self, other, insert = False):
+		assert(isinstance(other, BuildStage))
+		if insert:
+			self.run = other.run + self.run
+		else:
+			self.run = self.run + other.run
+		self.reboot = self.reboot or other.reboot
+
+	def validate(self):
+		for path in self.paths():
+			if not os.path.isfile(path):
+				raise ConfigError("Script snippet \"%s\" does not exist" % path)
+
+	def load(self):
+		result = []
+		for path in self.paths():
+			debug("Trying to load script snippet from %s" % path)
+
+			result += ["", "# BEGIN %s" % path]
+			with open(path, "r") as f:
+				result += f.read().split('\n')
+				result.append("# END OF %s" % path)
+
+		result += self.commands
+
+		return result
+
+	def paths(self):
+		result = []
+
+		stagedir = os.path.join("/usr/lib/twopence/provision", self.category)
+		for name in self.run:
+			path = os.path.join(stagedir, name)
+			result.append(path)
+
+		return result
+
 class Platform(Configurable):
-	info_attrs = ['name', 'image', 'vendor', 'os', 'imagesets', 'requires', 'features']
+	info_attrs = ['name', 'image', 'vendor', 'os', 'imagesets', 'requires', 'features', 'install', 'start']
 
 	def __init__(self, name):
 		self.name = name
@@ -212,7 +346,10 @@ class Platform(Configurable):
 		self.keyfile = None
 		self.repositories = ConfigDict("repository", Repository)
 		self.imagesets = ConfigDict("imageset", Imageset)
+		self.stages = ConfigDict("stage", BuildStage)
 		self.backends = BackendDict()
+		self.install = []
+		self.start = []
 		self.requires = []
 		self.features = []
 		self.vendor = None
@@ -232,12 +369,15 @@ class Platform(Configurable):
 		self.update_value(config, 'keyfile', 'ssh-keyfile')
 		self.update_list(config, 'requires')
 		self.update_list(config, 'features')
+		self.update_list(config, 'install')
+		self.update_list(config, 'start')
 		self.update_value(config, 'vendor')
 		self.update_value(config, 'os')
 
 		self.repositories.configure(config)
 		self.imagesets.configure(config)
 		self.backends.configure(config)
+		self.stages.configure(config)
 
 		# Extract info "blah" { ... } groups from the platform config.
 		self.info.configure(config)
@@ -287,6 +427,7 @@ class Platform(Configurable):
 			config.set_value("ssh-keyfile", self.keyfile)
 
 		self.repositories.publish(config)
+		self.stages.publish(config)
 
 		for saved in self.backends.values():
 			grand_child = config.add_child("backend", saved.name)
@@ -324,6 +465,18 @@ class Platform(Configurable):
 			os.makedirs(path)
 		return path
 
+	def describeBuildResult(self, name = None):
+		if name is None:
+			name = self.name
+
+		result = Platform(name)
+		result.vendor = self.vendor
+		result.os = self.os
+		result.features = self.features
+		result.repositories = self.repositories
+
+		return result
+
 	def setRawKey(self, keyData):
 		self._raw_key = keyData
 
@@ -349,6 +502,66 @@ class Platform(Configurable):
 		verbose("Saved image to %s" % dst)
 		return dst
 
+	# We need to deal with two cases here
+	# a) the platform defines an image directly
+	#	backend vagrant {
+	#		image "blah";
+	#	}
+	# b) the platform defines an image set that we need to choose from
+	#	imageset "Leap-15.3" {
+	#		architecture x86_64 {
+	#			backend vagrant {
+	#				image		"blah";
+	#			}
+	#		}
+	#	}
+	def resolveImage(self, config, backend, base_os = None, arch = None):
+		assert(type(backend) == str)
+
+		for saved in self.backends.savedConfigs(backend):
+			if saved.get_value("image") is not None:
+				return True
+
+		if not self.imagesets:
+			return False
+
+		if arch is None:
+			arch = os.uname().machine
+
+		found = None
+		for imageSet in self.imagesets.values():
+			if base_os and imageSet.os != base_os:
+				continue
+
+			arch_specific = imageSet.getArchitecture(arch)
+			if not arch_specific:
+				continue
+
+			build_config = arch_specific.getBackend(backend)
+			if not build_config:
+				continue
+
+			if found:
+				verbose("Found more than one matching image in base platform %s" % self)
+				return False
+
+			found = imageSet
+
+		if found is None:
+			verbose("No matching image in platform %s" % self)
+			return False
+
+		self.mergeBackendConfigs(build_config)
+		self.arch = arch
+		return True
+
+	def mergeBackendConfigs(self, backendConfigs):
+		if not backendConfigs.configs:
+			return
+
+		saved = self.backends.create(backendConfigs.name)
+		saved.configs = backendConfigs.configs + saved.configs
+
 class Role(Configurable):
 	info_attrs = ["name", "platform"]
 
@@ -372,13 +585,13 @@ class Role(Configurable):
 		self.update_list(config, 'features')
 
 class Node(Configurable):
-	info_attrs = ["name", "role", "platform"]
+	info_attrs = ["name", "role", "platform", "build"]
 
 	def __init__(self, name):
 		self.name = name
 		self.role = name
 		self.platform = None
-		self.build = None
+		self.build = []
 		self.install = []
 		self.start = []
 		self._backends = BackendDict()
@@ -389,7 +602,7 @@ class Node(Configurable):
 
 		self._backends.configure(config)
 		self.update_value(config, 'role')
-		self.update_value(config, 'build')
+		self.update_list(config, 'build')
 		self.update_value(config, 'platform')
 		self.update_list(config, 'install')
 		self.update_list(config, 'start')
@@ -401,81 +614,11 @@ class Build(Platform):
 		super().__init__(name)
 		self.base_platform = None
 		self.template = None
-		self.backend_build_config = None
 
 	def configure(self, config):
 		super().configure(config)
 		self.update_value(config, 'base_platform', 'base-platform')
 		self.update_value(config, 'template')
-
-	def mergeBackendConfigs(self, backendConfigs):
-		if not backendConfigs.configs:
-			return
-
-		saved = self.backends.create(backendConfigs.name)
-		saved.configs = backendConfigs.configs + saved.configs
-
-	def resolveImage(self, config, backend, base_os = None, arch = None):
-		assert(type(backend) == str)
-		if not self.base_platform:
-			return None
-
-		base_platform = config.getPlatform(self.base_platform)
-		if base_platform is None:
-			raise ConfigError("Cannot find base platform \"%s\"" % self.base_platform)
-
-		if not base_platform.imagesets:
-			return None
-
-		if arch is None:
-			arch = os.uname().machine
-
-		found = None
-		for imageSet in base_platform.imagesets.values():
-			if base_os and imageSet.os != base_os:
-				continue
-
-			arch_specific = imageSet.getArchitecture(arch)
-			if not arch_specific:
-				continue
-
-			build_config = arch_specific.getBackend(backend)
-			if not build_config:
-				continue
-
-			if found:
-				verbose("Found more than one matching image in base platform %s" % self.base_platform)
-				return None
-
-			found = imageSet
-
-		if found:
-			self.features += base_platform.features
-			self.requires += base_platform.requires
-			if not self.vendor:
-				self.vendor = base_platform.vendor
-			if not self.os:
-				self.os = base_platform.os
-			if not self.arch:
-				self.arch = arch
-
-			self.mergeBackendConfigs(build_config)
-		else:
-			verbose("No matching image in base platform %s" % self.base_platform)
-
-		return found
-
-	def describeBuildResult(self, name = None):
-		if name is None:
-			name = self.name
-
-		result = Platform(name)
-		result.vendor = self.vendor
-		result.os = self.os
-		result.features = self.features
-		result.repositories = self.repositories
-
-		return result
 
 class EmptyNodeConfig:
 	def __init__(self, name):
@@ -489,6 +632,7 @@ class EmptyNodeConfig:
 		self.features = []
 		self.backends = BackendDict()
 		self.info = None
+		self._stages = {}
 
 	@property
 	def image(self):
@@ -543,22 +687,139 @@ class EmptyNodeConfig:
 			nodePersist.vendor = self.platform.vendor
 			nodePersist.os = self.platform.os
 
+	@property
+	def stages(self):
+		return sorted(self._stages.values(), key = lambda stage: stage.order)
+
+	def createStage(self, name):
+		stage = self._stages.get(name)
+		if stage is None:
+			stage = BuildStage(name)
+			self._stages[name] = stage
+		return stage
+
+	def mergeStage(self, stage):
+		mine = self.createStage(stage.name)
+		mine.merge(stage)
+
+	def cookedStages(self):
+		return ProvisioningScriptCollection(self.stages, self.exportShellVariables())
+
+	def exportShellVariables(self):
+		debug("Building shell variables for node %s" % self.name)
+		result = ProvisioningShellEnvironment()
+		result.export("TWOPENCE_HOSTNAME", self.name)
+		result.export("TWOPENCE_PLATFORM", self.platform.name)
+		result.export("TWOPENCE_VENDOR", self.platform.vendor)
+		result.export("TWOPENCE_OS", self.platform.os)
+		result.export("TWOPENCE_ARCH", self.platform.arch)
+		result.export("TWOPENCE_FEATURES", self.features)
+		result.export("TWOPENCE_INSTALL_PACKAGES", self.install)
+		result.export("TWOPENCE_START_SERVICES", self.start)
+
+		activate_repos = []
+		for repo in self.repositories:
+			if repo.active:
+				print("Repository %s already active; no need to activate it" % repo.name)
+				continue
+
+			name = repo.name
+			result.export("TWOPENCE_REPO_%s_URL" % name, repo.url)
+
+			keyfile = repo.keyfile
+			if keyfile is None:
+				keyfile = "%s/repodata/repomd.xml.key" % repo.url
+
+			if not keyfile.startswith("http:") and not keyfile.startswith("https:"):
+				warning("Repository %s specifies keyfile %s - this will most likely fail" % (repo.name, keyfile))
+			else:
+				result.export("TWOPENCE_REPO_%s_KEY" % name, keyfile)
+
+			activate_repos.append(name)
+
+			# When we build a silver image, the definition for this repo is written
+			# to the platform config file - but marked as "active". When we then
+			# provision a machine with this image, the flag tells us that we do not
+			# have to activate it again (see a few above)
+			repo.active = True
+
+		result.export("TWOPENCE_ADD_REPOSITORIES", activate_repos)
+
+		result.exportDict(self.info, "INFO")
+		result.exportDict(self.platform.info, "PLATFORM_INFO")
+
+		return result
+
 class FinalNodeConfig(EmptyNodeConfig):
-	def __init__(self, node, platform, global_info):
+	def __init__(self, node, platform, build_options, global_info):
 		super().__init__(node.name)
 
 		self.platform = platform
 		self.install += node.install
 		self.start += node.start
-		self.features += platform.features
-		self.requires += platform.requires
 		self.backends = node._backends
 		self.info = global_info
 
-		if isinstance(platform, Build):
-			self.buildResult = platform.describeBuildResult()
-		else:
-			self.buildResult = None
+		self.describeBuildResult()
+
+		self.mergePlatformOrBuild(platform)
+		for build in build_options:
+			self.mergePlatformOrBuild(build)
+
+			# override any backend specific settings from the build
+			# option
+			self.backends.merge(build.backends)
+
+		for stage in platform.stages.values():
+			# stage.only can be one of
+			#  build: only applicable during build; so don't publish to resulting image
+			#  once: only execute once; don't publish to resulting image either
+			#
+			if stage.only is None:
+				self.buildResult.stages.add(stage)
+
+	def mergePlatformOrBuild(self, p):
+		self.features += p.features
+		self.install += p.install
+		self.start += p.start
+		self.requires += p.requires
+
+		for stage in p.stages.values():
+			if stage.only == 'build' and self.name != 'build':
+				print("Skipping stage %s (marked as %s only)" % (stage.name, stage.only))
+				continue
+
+			self.mergeStage(stage)
+
+		# Loop over all specified repos. If a repo is marked with
+		# "enabled = True", we enable it right away.
+		for repo in p.repositories.values():
+			if repo.enabled and repo not in self.repositories:
+				self.repositories.append(repo)
+
+			self.buildResult.repositories.add(repo)
+
+		self.buildResult.features += p.features
+
+	def describeBuildResult(self):
+		base = self.platform
+
+		result = Platform(base.name)
+		result.vendor = base.vendor
+		result.os = base.os
+
+		self.buildResult = result
+		return result
+
+	def display(self):
+		print("Node %s" % self.name)
+		print("  Platform   %s" % self.platform)
+		print("  Install    %s" % self.install)
+		print("  Start      %s" % self.start)
+		print("  Features   %s" % self.features)
+		print("  Requires   %s" % self.requires)
+		for stage in self.stages:
+			print("   stage %s" % stage)
 
 	# Called from the backend when it detects a new private key
 	# during provisioning.
@@ -725,6 +986,15 @@ class Config(Configurable):
 
 	def finalizeNode(self, node, backend):
 		platform = self.platformForNode(node, backend)
+		if not platform.resolveImage(self, backend.name):
+			raise ConfigError("Unable to determine image for node %s" % node.name)
+
+		build_options = []
+		for name in node.build:
+			build = self.getBuild(name)
+			if build is None:
+				raise ConfigError("Node %s wants to use feature %s, but I can't find it" % (node.name, name))
+			build_options.append(build)
 
 		if not platform.vendor or not platform.os:
 			raise ConfigError("Node %s uses platform %s, which lacks a vendor and os definition" % (platform.name, node.name))
@@ -737,7 +1007,7 @@ class Config(Configurable):
 				raise ConfigError("node %s requires \"%s\" but I don't know how to provide it (maybe you need to create %s)" % (
 							node.name, name, filename))
 
-		result = FinalNodeConfig(node, platform, self.info)
+		result = FinalNodeConfig(node, platform, build_options, self.info)
 
 		role = self.getRole("default")
 		if role:
@@ -756,17 +1026,10 @@ class Config(Configurable):
 	def createEmptyNode(name, workspace = None):
 		return EmptyNodeConfig(name)
 
+	def createNode(self, name):
+		return self._nodes.create(name)
+
 	def platformForNode(self, node, backend):
-		if node.build:
-			build = self._builds.get(node.build)
-			if not build:
-				raise ConfigError("Cannot find build \"%s\" for node \"%s\"" % (node.build, node.name))
-
-			# This locates the correct base image for this build
-			if not build.resolveImage(self, backend.name):
-				raise ConfigError("Cannot resolve base image \"%s\" for build \"%s\"" % (build.base_platform, build.name))
-			return build
-
 		if node.platform:
 			platform = self.getPlatform(node.platform)
 			if platform:
