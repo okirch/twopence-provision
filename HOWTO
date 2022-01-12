@@ -4,23 +4,36 @@ Building a silver image
 
 	Example: SLES15-SP3 plus selinux
 
-	twopence provision --workspace ~/susetest init
+	twopence provision --workspace ~/susetest/build init
 	twopence provision --workspace ~/susetest build selinux
+	twopence provision --workspace ~/susetest/build build \
+			--base-platform leap-15.3 --feature selinux \
+			leap-15.3-selinux
 	rm -rf ~/susetest
 
-	This loads a build.conf file from /usr/lib/twopence/provision/selinux,
-	and provisions a build node using the base platform. The base platform
-	is defined in build.conf.
+	This loads the description of the base platform (leap-15.3) along
+	with a list of available build features. Out of these build features,
+	the invocation above enables selinux. It then proceeds to provision
+	a basic Leap 15.3 VM, and performs all provisioning and build
+	steps.
 
-	For the time being, bring-up and building is rolled into one;
-	the entire process is coded in selinux/Vagrantfile
+	Provisioning and building is done by assembling various shell
+	snippets and executing them. Which shell snippets are used,
+	and the order in which they are executed, is defined in the
+	platform definition file (/etc/twopence/platform.d/leap-15.3.conf
+	in the example above).
+
+	Exactly how these shell scripts are executed is dependent on
+	the provisioning backend. For the vagrant backend, the shell
+	snippets are collated into the Vagrantfile, which is then
+	processed by "vagrant up".
 
 	The result of the build process is a vagrant image that
 	is placed in ~/.twopence, along with some meta data that allows
 	the twopence provisioner to pick it up later.
 
 	The above build command would build a vagrant image that
-	is based on SLES15-SP3, and has selinux enabled. The resulting
+	is based on Leap 15.3, and has selinux enabled. The resulting
 	image can be referenced by specifying "selinux-runtime-15.3" as
 	platform.
 
@@ -31,7 +44,7 @@ Provisioning a test cluster
 	Create a file named testrun.conf with the following content:
 
 	  role "default" {
-		platform	"selinux-runtime-15.3";
+		platform	"leap-15.3-selinux";
 		repositories	"testbus";
 	  }
 
