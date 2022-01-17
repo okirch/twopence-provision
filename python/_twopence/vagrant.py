@@ -9,6 +9,7 @@ import os
 import json
 import shutil
 import copy
+import time
 
 from .logging import *
 from .backend import Backend
@@ -607,6 +608,7 @@ class VagrantBackend(Backend):
 		assert(instance.config.buildResult)
 		platform = instance.config.buildResult
 		platform.name = packageName
+		platform.build_time = time.strftime("%Y-%m-%d %H:%M:%S GMT", time.gmtime())
 
 		imagePath = self.saveInstanceImage(instance, platform)
 		metaPath = self.saveInstanceMeta(instance, platform, imagePath)

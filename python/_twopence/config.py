@@ -354,6 +354,7 @@ class Platform(Configurable):
 		self.features = []
 		self.vendor = None
 		self.os = None
+		self.build_time = None
 
 		self.info = ExtraInfo()
 
@@ -373,6 +374,7 @@ class Platform(Configurable):
 		self.update_list(config, 'start')
 		self.update_value(config, 'vendor')
 		self.update_value(config, 'os')
+		self.update_value(config, 'build_time', 'build-time')
 
 		self.repositories.configure(config)
 		self.imagesets.configure(config)
@@ -425,6 +427,8 @@ class Platform(Configurable):
 			config.set_value("features", self.features)
 		if self.keyfile:
 			config.set_value("ssh-keyfile", self.keyfile)
+		if self.build_time:
+			config.set_value('build-time', self.build_time)
 
 		self.repositories.publish(config)
 		self.stages.publish(config)
