@@ -36,6 +36,7 @@ VagrantShellTrailer = '''
 
 class VagrantBoxInfo:
 	ORIGIN_LOCAL = "local"
+	ORIGIN_REMOTE = "remote"
 	ORIGIN_VAGRANTCLOUD = "vagrant"
 
 	def __init__(self, name = None, version = None, provider = None, url = None, origin = None):
@@ -67,8 +68,9 @@ class VagrantBoxInfo:
 		if self.origin == other.origin:
 			return True
 
-		if self.origin == self.ORIGIN_VAGRANTCLOUD or \
-		   other.origin == self.ORIGIN_VAGRANTCLOUD:
+		# A local and a remote image always match
+		if self.origin == self.ORIGIN_LOCAL or \
+		   other.origin == self.ORIGIN_LOCAL:
 			return True
 
 		return False
@@ -111,7 +113,7 @@ class VagrantBoxMeta:
 				verbose("unable to retrieve image from \"%s\" - faking it" % url)
 
 			self.downloadUrl = remote
-		elif url and url.startswith("/"):
+		elif url.startswith("/"):
 			self.origin = VagrantBoxInfo.ORIGIN_LOCAL
 
 			debug("URL %s refers to local image" % url)
@@ -120,6 +122,17 @@ class VagrantBoxMeta:
 				return None
 
 			self.downloadUrl = url
+		elif url.startswith("http:") or url.startswith("https:"):
+			self.origin = VagrantBoxInfo.ORIGIN_REMOTE
+
+			debug("URL %s refers to remote image" % url)
+			self.downloadUrl = url
+
+			self.addBox(version = None,
+					provider = provider,
+					url = url
+					)
+			return
 		else:
 			raise ConfigError("vagrant: don't know how to handle image url %s" % url)
 
