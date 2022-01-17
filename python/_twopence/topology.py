@@ -23,6 +23,7 @@ class TopologyStatus:
 			self._ipv4_address = config.get_value("ipv4_address")
 			self._ipv6_address = config.get_value("ipv6_address")
 			self._features = config.get_values("features")
+			self._resources = config.get_values("resources")
 			self._vendor = config.get_value("vendor")
 			self._os = config.get_value("os")
 			self._keyfile = config.get_value("keyfile")
@@ -56,6 +57,16 @@ class TopologyStatus:
 			if self._features != value:
 				self._config.set_value("features", value)
 				self._features = value
+
+		@property
+		def resources(self):
+			return self._resources
+
+		@resources.setter
+		def resources(self, value):
+			if self._resources != value:
+				self._config.set_value("resources", value)
+				self._resources = value
 
 		@property
 		def vendor(self):

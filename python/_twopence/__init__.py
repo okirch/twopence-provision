@@ -11,4 +11,4 @@ from .paths import *
 from .manifest import BOM
 from .backend import Backend
 from .topology import TestTopology
-from .config import Config, ConfigError
+from .config import Config, ConfigError, RequirementsManager

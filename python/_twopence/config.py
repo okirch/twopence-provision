@@ -446,7 +446,7 @@ class BuildStage(Configurable):
 		return result
 
 class Platform(Configurable):
-	info_attrs = ['name', 'image', 'vendor', 'os', 'imagesets', 'requires', 'features', 'install', 'start']
+	info_attrs = ['name', 'image', 'vendor', 'os', 'imagesets', 'requires', 'features', 'install', 'start', 'resources']
 
 	def __init__(self, name):
 		self.name = name
@@ -461,6 +461,7 @@ class Platform(Configurable):
 		self.start = []
 		self.requires = []
 		self.features = []
+		self.resources = []
 		self.vendor = None
 		self.os = None
 		self.build_time = None
@@ -479,6 +480,7 @@ class Platform(Configurable):
 		self.update_list(config, 'features')
 		self.update_list(config, 'install')
 		self.update_list(config, 'start')
+		self.update_list(config, 'resources')
 		self.update_value(config, 'vendor')
 		self.update_value(config, 'os')
 		self.update_value(config, 'build_time', 'build-time')
@@ -529,6 +531,8 @@ class Platform(Configurable):
 		config.set_value("os", self.os)
 		if self.features:
 			config.set_value("features", self.features)
+		if self.resources:
+			config.set_value("resources", self.resources)
 		if self.keyfile:
 			config.set_value("ssh-keyfile", self.keyfile)
 		if self.build_time:
@@ -581,6 +585,7 @@ class Platform(Configurable):
 		result.vendor = self.vendor
 		result.os = self.os
 		result.features = self.features
+		result.resources = self.resources
 		result.repositories = self.repositories
 
 		return result
@@ -738,6 +743,7 @@ class EmptyNodeConfig:
 		self.start = []
 		self.requires = []
 		self.features = []
+		self.resources = []
 		self.backends = BackendDict()
 		self.satisfiedRequirements = None
 		self._stages = {}
@@ -791,6 +797,7 @@ class EmptyNodeConfig:
 
 	def persistInfo(self, nodePersist):
 		nodePersist.features = self.features
+		nodePersist.resources = self.resources
 		if self.platform:
 			nodePersist.vendor = self.platform.vendor
 			nodePersist.os = self.platform.os
@@ -890,6 +897,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 
 	def mergePlatformOrBuild(self, p):
 		self.features += p.features
+		self.resources += p.resources
 		self.install += p.install
 		self.start += p.start
 		self.requires += p.requires
@@ -910,6 +918,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 			self.buildResult.repositories.add(repo)
 
 		self.buildResult.features += p.features
+		self.buildResult.resources += p.resources
 
 	def describeBuildResult(self):
 		base = self.platform
