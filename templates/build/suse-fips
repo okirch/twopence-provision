@@ -1,0 +1,12 @@
+#
+# This script enables fips on a running VM
+#
+# Note that a subsequent reboot is required for relabelling
+#
+
+zypper in -y -t pattern fips
+
+echo "Updating kernel command line"
+/usr/sbin/sysconf_addword /etc/default/grub GRUB_CMDLINE_LINUX_DEFAULT fips=1
+/sbin/update-bootloader
+

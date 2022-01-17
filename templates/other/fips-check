@@ -1,0 +1,2 @@
+# This is executed by FIPS provisioning, after the reboot
+sysctl -a | grep crypto.fips_enabled
