@@ -301,6 +301,11 @@ class TestTopology:
 		self.instances = self.backend.detect(self.workspace, self.persistentState, self.instanceConfigs)
 		return self.instances
 
+	def requires(self):
+		for instanceConfig in self.instanceConfigs:
+			for name in instanceConfig.requires:
+				yield name, instanceConfig.name
+
 	def prepare(self):
 		assert(not self.instances)
 

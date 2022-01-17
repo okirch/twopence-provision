@@ -11,27 +11,42 @@ import sys
 import os
 from _twopence.provision import *
 from _twopence.provision.topology import TopologyStatus
+from _twopence.provision.paths import *
 
 global_config_files	= [
 	"twopence.conf",
 	"provision.conf",
 ]
 
-class Action:
+class BasicAction(object):
 	def __init__(self, args):
+		self.args = args
+		self._backend = None
+		self._config = None
+
+	def loadEmptyConfig(self):
+		if self._config is None:
+			config = Config(None)
+			for path in global_config_files:
+				config.load(path)
+			config.addDirectory(twopence_user_config_dir)
+			self._config = config
+
+		return self._config
+
+class Action(BasicAction):
+	def __init__(self, args):
+		super().__init__(args)
+
 		if args.workspace is None:
 			print("Error: missing --workspace option")
 			parser.print_help()
 			exit(2)
 
-		self.args = args
-
 		self.workspace = args.workspace
 		self.auto_destroy = False
 
 		self._bom = None
-		self._backend = None
-		self._config = None
 
 		self._auto_update_images = not args.no_auto_update_images
 
@@ -87,6 +102,9 @@ class Action:
 
 		self._config = config
 		return config
+
+	def validateConfig(self, config, purpose):
+		config.validate(purpose = purpose)
 
 	def createTopology(self, purpose = None):
 		backend = self.backend
@@ -379,6 +397,101 @@ class ActionLogin(Action):
 		print("  %s" % cmdline)
 		os.system(cmdline)
 
+class ActionPlatform(BasicAction):
+	def __init__(self, args):
+		super().__init__(args)
+		self._requirements = {}
+
+	def perform(self):
+		config = self.loadEmptyConfig()
+
+		all = []
+		for info in config.locatePlatformFiles():
+			for platform in info.platforms:
+				all.append((platform, info))
+
+		all = sorted(all, key = lambda pair: (pair[0].vendor, pair[0].os, pair[0].name))
+
+		if not all:
+			print("No platforms configured. Something is wrong.")
+			return
+
+		requires = set()
+		backends = {}
+
+		print()
+		for platform, info in all:
+			print("%s (%s)" % (platform.name, info.path))
+			print("    Vendor/OS:      %s/%s" % (platform.vendor, platform.os))
+			if platform.build_time:
+				print("    Build time:     %s" % platform.build_time)
+			self.showRequires(config, platform)
+			if platform.features:
+				print("    Features:       %s" % ", ".join(platform.features))
+			if platform.install:
+				print("    Install pkgs:   %s" % ", ".join(platform.install))
+			if platform.start:
+				print("    Start svcs:     %s" % ", ".join(platform.start))
+
+			if info.builds:
+				print()
+				print("    Build options")
+			for build in info.builds:
+				print("      - %s" % build.name)
+				if build.features:
+					print("        Provides:       %s" % ", ".join(build.features))
+				if build.requires:
+					print("    Requires:       %s" % ", ".join(build.requires))
+				for name in platform.requires:
+					requires.add(name)
+
+			if platform.backends:
+				# We could print per-backend image/key information here
+				# If we want to get super smart, we could even display image version
+				# (upstream and local).
+				print()
+				print("    Backends")
+				for backendInfo in platform.backends.values():
+					backend = backends.get(backendInfo.name)
+					if backend is None:
+						backend = Backend.create(backendInfo.name)
+						backends[backendInfo.name] = backend
+					print("      - %s" % backend.name)
+					for name, value in backend.renderPlatformInformation(backendInfo):
+						print("        %-12s %s" % (name.capitalize(), value))
+
+			for name in platform.requires:
+				requires.add(name)
+
+			print()
+
+		if requires:
+			print()
+			print("Detected requirement(s): %s" % ", ".join(requires))
+			for name in requires:
+				path = config.locateConfig("%s.conf" % name)
+				if path is None:
+					print("  %s: not provided by any config file; please create %s/%s.conf" % (
+							name, twopence_user_data_dir, name))
+				else:
+					print("  %s: provided by %s" % (name, path))
+
+	# obj is Platform or Build
+	def showRequires(self, config, obj):
+		if obj.requires:
+			print("    Requires:       %s" % ", ".join(obj.requires))
+			for name in obj.requires:
+				status = self._requirements.get(name)
+				if status is None:
+					path = config.locateConfig("%s.conf" % name)
+					if path is None:
+						status = "not provided by any config file; please create %s/%s.conf" % (
+								twopence_user_data_dir, name)
+					else:
+						status = "provided by %s" % (path)
+					self._requirements[name] = status
+				print("    - %13s %s" % (name, status))
+
 def build_arg_parser():
 	import argparse
 
@@ -440,6 +553,9 @@ def build_arg_parser():
 	sp.set_defaults(action = ActionLogin)
 	sp.add_argument('node', metavar='NODE-NAME', nargs = 1,
 			help='the node name of the system to connect to')
+
+	sp = sub.add_parser('platforms', help = 'Display information on available platforms')
+	sp.set_defaults(action = ActionPlatform)
 
 	sp = sub.add_parser('help', help = 'Print this message')
 	sp.set_defaults(action = ActionHelp)

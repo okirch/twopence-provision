@@ -21,3 +21,9 @@ class Backend(Configurable):
 			return VagrantBackend()
 
 		raise ConfigError("Cannot create backend \"%s\" - unknown backend family" % family)
+
+	# Return a list of name/value pairs describing the image associated with
+	# a platform.
+	# The info argument is a Config.SavedBackendConfig object
+	def renderPlatformInformation(self, info):
+		return []

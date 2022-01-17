@@ -879,6 +879,42 @@ class Config(Configurable):
 				return path
 		return None
 
+	class PlatformInfo(Configurable):
+		info_attrs = ['path']
+
+		def __init__(self, path):
+			self.path = path
+
+			self._platforms = ConfigDict("platform", Platform, verbose = True)
+			self._builds = ConfigDict("build", Build, verbose = True)
+			self.build_time = None
+
+			config = curly.Config(path)
+			self.configure(config.tree())
+
+		def configure(self, tree):
+			self._platforms.configure(tree)
+			self._builds.configure(tree)
+			self.update_value(tree, 'build_time', 'build-time')
+
+		@property
+		def builds(self):
+			return self._builds.values()
+
+		@property
+		def platforms(self):
+			return self._platforms.values()
+
+	def locatePlatformFiles(self):
+		for basedir in self._user_config_dirs + Config._default_config_dirs:
+			path = os.path.join(basedir, "platform.d")
+			if os.path.isdir(path):
+				for de in os.scandir(path):
+					if not de.is_file() or not de.name.endswith(".conf"):
+						continue
+
+					yield self.PlatformInfo(de.path)
+
 	def load(self, filename):
 		filename = self.locateConfig(filename)
 		if filename is None:
