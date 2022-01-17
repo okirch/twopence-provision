@@ -52,7 +52,7 @@ class ProvisioningScriptCollection:
 			if stage.reboot:
 				script = self.createScript(stage.name, stage.reboot)
 
-			print("Processing stage %s -> %s" % (stage.name, script.name))
+			debug("Processing stage %s -> %s" % (stage.name, script.name))
 			script.merge(stage)
 
 	def __iter__(self):
@@ -85,7 +85,7 @@ class ProvisioningShellEnvironment:
 			return
 
 		for name, value in d.items():
-			key = "TWOPENCE_%s_%s" % (prefix, name)
+			key = "%s_%s" % (prefix, name)
 			self.export(key.upper(), value)
 
 	def __iter__(self):

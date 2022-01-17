@@ -112,39 +112,148 @@ class ConfigDict(dict):
 			child = config.add_child(self.type_name, item.name)
 			item.publish(child)
 
-class ExtraInfo(dict):
-	def __init__(self, name = None):
+#
+# A platform definition can describe requirements (such as an activation regcode).
+# We want to be able to
+#  (a) store these in a curly config file somewhere below ~/.twopence
+#  (b) prompt the user for this data if it's not cached somewhere
+#  (c) export this information as (shell) variables to the provisioning code
+#
+# A platform may require a string, such as "suse-registration".
+#
+# The prompting information is a set of of items, as in
+#	requirement "suse-sles-registration" {
+#		provides "suse-registration"
+#		item regcode {
+#			prompt "Please enter regcode";
+#		}
+#		item email ...
+#	}
+#
+# The "provides" attribute is used so that we can make scripts a bit more
+# generic. For instance, different products may require different regcodes,
+# but they all provide the same class of information (ie suse-registration).
+# The provisioning script doesn't have to understand each regcode, it can
+# be written to refer to generic "suse-registration" data.
+#
+# When caching this information, it will be stored in
+# ~/.twopence/config/suse-sles-registration.conf and contain s.th. like this:
+#	info "suse-registration" {
+#		email "Olaf.Kirch@suse.com";
+#		regcode "BLAH-BLAH-BLAH";
+#	}
+# Note the difference between the file name (which reflects the name of the
+# requirement) and the name on the info {} block (which reflects what this
+# set of data provides).
+#
+# This information is provided to provisioning scripts as shell variables:
+#  TWOPENCE_INFO_SUSE_REGISTRATION_EMAIL
+#  TWOPENCE_INFO_SUSE_REGISTRATION_REGCODE
+#
+class ConfigRequirement(Configurable):
+	info_attrs = ['name', 'provides', 'valid']
+
+	class Item(Configurable):
+		def __init__(self, name, config):
+			self.name = name
+			self.prompt = None
+			self.default = None
+
+			self.update_value(config, 'prompt')
+			self.update_value(config, 'default')
+
+	class Fnord(Configurable):
+		info_attrs = ['name']
+
+		def __init__(self, name, data = None):
+			self.name = name
+			self.data = data or {}
+
+		def configure(self, config):
+			for name in config.get_attributes():
+				self.data[name] = config.get_value(name)
+
+		def publish(self, curlyNode):
+			for key, value in self.data.items():
+				curlyNode.set_value(key, value)
+
+	def __init__(self, name):
 		self.name = name
+		self.provides = name
+		self.valid = []
+		self.items = []
 
-	# Config files can specify opaque bits of info that can be referenced
-	# in template files. Example:
-	#
-	#	info "registration" {
-	#		email "Olaf.Kirch@suse.com";
-	#		regcode "INTERNAL-USE-ONLY-0000-0000";
-	#	}
-	#
-	# We stow these in the info dict with keys registration_email
-	# and registration_regcode. Template files can reference these.
-	# Information from a global info {} group is provided using
-	# the prefix "INFO_", while data from an info group nested within
-	# a platform is provided with a prefix of "PLATFORM_INFO_".
-	#
-	# So if the above info group is global, a Vagrantfile template
-	# would reference them as @INFO_REGISTRATION_EMAIL@ and
-	# @INFO_REGISTRATION_REGCODE@, # respectively.
+		self._cache = None
+
 	def configure(self, config):
-		for name in config.get_children("info"):
-			child = config.get_child("info", name)
+		self.update_list(config, 'valid')
+		self.update_value(config, 'provides')
+		for name in config.get_children("item"):
+			item = self.Item(name, config.get_child("item", name))
+			self.items.append(item)
 
-			for attr_name in child.get_attributes():
-				values = child.get_values(attr_name)
-				if not values:
-					values = [""]
+	def prompt(self):
+		for item in self.items:
+			yield item.name, item.prompt, item.default
 
-				info_name = "%s_%s" % (name, attr_name)
-				self[info_name] = values[0]
-				self[info_name + "_list"] = values
+	def getResponse(self, nodeName):
+		return self._cache
+
+	def getCachedResponse(self, nodeName):
+		return self._cache
+
+	def loadResponse(self, nodeName, config):
+		name = self.name
+
+		if "permanent" not in self.valid:
+			return None
+
+		debug(f"Locating requirement {self.name}")
+		path = config.locateConfig(f"{name}.conf")
+		if path is None:
+			debug(f"No cached config for requirement {name}")
+			return None
+
+		debug(f"Loading requirement {self.name} from {path}")
+		cfg = curly.Config(path)
+		child = cfg.tree().get_child("info", self.provides)
+		if child is None:
+			warning(f"file {path} should contain info {self.provides} " + "{ ... }")
+			warning(f"Ignoring {path}...")
+			return None
+
+		response = self.Fnord(self.provides)
+		response.configure(child)
+
+		return response
+
+	def buildResponse(self, nodeName, data):
+		response = self.Fnord(self.provides, data)
+
+		if "allnodes" in self.valid:
+			self._cache = response
+
+		self.saveResponse(nodeName, response)
+		return response
+
+	def saveResponse(self, nodeName, response):
+		if "allnodes" in self.valid:
+			self._cache = response
+
+		if "permanent" not in self.valid:
+			return
+
+		path = os.path.expanduser(twopence_user_config_dir)
+		path = os.path.join(path, f"{self.name}.conf")
+
+		debug(f"Saving requirement {self.name} to {path}")
+		cfg = curly.Config()
+
+		root = cfg.tree()
+		child = root.add_child("info", self.provides)
+		response.publish(child)
+
+		cfg.save(path)
 
 class SavedBackendConfig:
 	def __init__(self, name, config = None):
@@ -356,8 +465,6 @@ class Platform(Configurable):
 		self.os = None
 		self.build_time = None
 
-		self.info = ExtraInfo()
-
 		# used during build, exclusively
 		self._raw_key = None
 
@@ -380,9 +487,6 @@ class Platform(Configurable):
 		self.imagesets.configure(config)
 		self.backends.configure(config)
 		self.stages.configure(config)
-
-		# Extract info "blah" { ... } groups from the platform config.
-		self.info.configure(config)
 
 	def getRepository(self, name):
 		return self.repositories.get(name)
@@ -635,7 +739,7 @@ class EmptyNodeConfig:
 		self.requires = []
 		self.features = []
 		self.backends = BackendDict()
-		self.info = None
+		self.satisfiedRequirements = None
 		self._stages = {}
 
 	@property
@@ -749,20 +853,22 @@ class EmptyNodeConfig:
 
 		result.export("TWOPENCE_ADD_REPOSITORIES", activate_repos)
 
-		result.exportDict(self.info, "INFO")
-		result.exportDict(self.platform.info, "PLATFORM_INFO")
+		for response in self.satisfiedRequirements:
+			respName = response.name.replace('-', '_')
+			prefix = f"TWOPENCE_INFO_{respName}"
+			result.exportDict(response.data, prefix)
 
 		return result
 
 class FinalNodeConfig(EmptyNodeConfig):
-	def __init__(self, node, platform, build_options, global_info):
+	def __init__(self, node, platform, build_options, satisfied_requirements):
 		super().__init__(node.name)
 
 		self.platform = platform
 		self.install += node.install
 		self.start += node.start
 		self.backends = node._backends
-		self.info = global_info
+		self.satisfiedRequirements = satisfied_requirements
 
 		self.describeBuildResult()
 
@@ -852,6 +958,7 @@ class Config(Configurable):
 		self.logspace = None
 		self.testcase = None
 		self.status = None
+		self._requirementsManager = None
 		self._user_config_dirs = []
 
 		self._backends = BackendDict()
@@ -859,10 +966,9 @@ class Config(Configurable):
 		self._roles = ConfigDict("role", Role, verbose = True)
 		self._nodes = ConfigDict("node", Node, verbose = True)
 		self._builds = ConfigDict("build", Build, verbose = True)
+		self._requirements = ConfigDict("requirement", ConfigRequirement, verbose = True)
 		self._repositories = []
 		self._parameters = {}
-
-		self.info = ExtraInfo()
 
 		self.defaultRole = self._roles.create("default")
 
@@ -936,13 +1042,11 @@ class Config(Configurable):
 		self._roles.configure(tree)
 		self._nodes.configure(tree)
 		self._builds.configure(tree)
+		self._requirements.configure(tree)
 
 		self.update_value(tree, 'workspaceRoot', 'workspace-root')
 		self.update_value(tree, 'workspace')
 		self.update_value(tree, 'testcase')
-
-		# Extract data from global info "blah" { ... } groups
-		self.info.configure(tree)
 
 		# commonly, parameters are defined in testrun.conf, but
 		# the may also come from any other config file.
@@ -1010,6 +1114,22 @@ class Config(Configurable):
 		assert(isinstance(value, dict))
 		self._parameters.update(value)
 
+	@property
+	def requirements(self):
+		return self._requirements
+
+	def getRequirement(self, name):
+		return self._requirements.get(name)
+
+	@property
+	def requirementsManager(self):
+		return self._requirementsManager
+
+	@requirementsManager.setter
+	def requirementsManager(self, value):
+		assert(isinstance(value, RequirementsManager))
+		self._requirementsManager = value
+
 	def configureBackend(self, backend):
 		for config in self._backends.savedConfigs(backend.name):
 			backend.configure(config)
@@ -1039,15 +1159,19 @@ class Config(Configurable):
 		if not platform.vendor or not platform.os:
 			raise ConfigError("Node %s uses platform %s, which lacks a vendor and os definition" % (platform.name, node.name))
 
+		satisfied = []
 		if platform.requires:
 			for name in platform.requires:
-				if self.load("%s.conf" % name):
-					continue
+				response = None
+				if self._requirementsManager:
+					response = self._requirementsManager.handle(node.name, name)
 
-				raise ConfigError("node %s requires \"%s\" but I don't know how to provide it (maybe you need to create %s)" % (
-							node.name, name, filename))
+				if response is None:
+					raise ConfigError("node %s requires \"%s\" but I don't know how to provide it" % (node.name, name))
 
-		result = FinalNodeConfig(node, platform, build_options, self.info)
+				satisfied.append(response)
+
+		result = FinalNodeConfig(node, platform, build_options, satisfied)
 
 		role = self.getRole("default")
 		if role:
@@ -1093,3 +1217,36 @@ class Config(Configurable):
 			raise ConfigError("Cannot find platform \"%s\" for default role" % (self.defaultRole.platform))
 
 		raise ConfigError("No platform defined for node \"%s\" (role \"%s\")" % (node.name, node.role))
+
+##################################################################
+# Handle requirements
+# Front-end should derive from this
+##################################################################
+class RequirementsManager(object):
+	def __init__(self, config):
+		self.config = config
+		self._cache = dict()
+		self._configs = []
+
+	# This should be implemented by subclasses
+	# It should return a dict mapping item name to value
+	def prompt(self, nodeName, req):
+		return None
+
+	def handle(self, nodeName, reqName):
+		req = self.config.getRequirement(reqName)
+		if req is None:
+			raise ConfigError("Nothing known about requirement %s" % reqName)
+
+		# First, let's see if we cached it during a previous call
+		response = req.getCachedResponse(nodeName)
+
+		if response is None:
+			response = req.loadResponse(nodeName, self.config)
+
+		if response is None:
+			data = self.prompt(nodeName, req)
+			if data:
+				response = req.buildResponse(nodeName, data)
+
+		return response

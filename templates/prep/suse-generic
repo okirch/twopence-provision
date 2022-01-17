@@ -15,7 +15,7 @@
 #
 case $TWOPENCE_OS in
 SLES*-SP*)
-	eval $(echo "$TWOPENCE_OS" | sed 's:SLES\(.*\)-SP\(.*\):MAJOR=\1 MINOR=\2:')
+	eval $(echo "$TWOPENCE_OS" | sed 's:SLES\\(.*\\)-SP\\(.*\\):MAJOR=\\1 MINOR=\\2:')
 	ibs_build_target=SLE_${MAJOR}_SP$MINOR
 	sle_module_version=$MAJOR.$MINOR
 	: ;;
@@ -29,11 +29,11 @@ esac
 
 case $TWOPENCE_OS in
 SLE*)
-	if [ -z "$TWOPENCE_INFO_REGISTRATION_REGCODE" -o -z "$TWOPENCE_INFO_REGISTRATION_EMAIL" ]; then
+	if [ -z "$TWOPENCE_INFO_SUSE_REGISTRATION_REGCODE" -o -z "$TWOPENCE_INFO_SUSE_REGISTRATION_EMAIL" ]; then
 		echo "Error: cannot register $TWOPENCE_OS system; lacking regcode and/or email" >&2
-		false
+		exit 1
 	else
-		SUSEConnect -r "$TWOPENCE_INFO_REGISTRATION_REGCODE" -e "$TWOPENCE_INFO_REGISTRATION_EMAIL"
+		SUSEConnect -r "$TWOPENCE_INFO_SUSE_REGISTRATION_REGCODE" -e "$TWOPENCE_INFO_SUSE_REGISTRATION_EMAIL"
 		SUSEConnect -p sle-module-desktop-applications/$sle_module_version/$TWOPENCE_ARCH
 		SUSEConnect -p sle-module-development-tools/$sle_module_version/$TWOPENCE_ARCH
 		SUSEConnect --list-extensions

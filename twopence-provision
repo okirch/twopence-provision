@@ -100,6 +100,8 @@ class Action(BasicAction):
 		if purpose:
 			config.validate(purpose = purpose)
 
+		config.requirementsManager = RequirementsPrompter(config)
+
 		self._config = config
 		return config
 
@@ -491,6 +493,64 @@ class ActionPlatform(BasicAction):
 						status = "provided by %s" % (path)
 					self._requirements[name] = status
 				print("    - %13s %s" % (name, status))
+
+# FIXME: It might make sense to put the history loading into a utility class
+# and share it across all of twopence/susetest
+import readline
+import atexit
+
+class RequirementsPrompter(RequirementsManager):
+	histfile = None
+	h_len = None
+
+	def __init__(self, config):
+		super().__init__(config)
+
+		self.loadHistory("~/.twopence/reqhistory")
+
+	@classmethod
+	def loadHistory(cls, path):
+		if cls.h_len is not None:
+			return
+
+		cls.histfile = os.path.expanduser(path)
+		try:
+			readline.read_history_file(cls.histfile)
+			cls.h_len = readline.get_current_history_length()
+		except FileNotFoundError:
+			open(cls.histfile, 'wb').close()
+			cls.h_len = 0
+
+		atexit.register(cls.saveHistory)
+
+	@classmethod
+	def saveHistory(cls):
+		new_h_len = readline.get_current_history_length()
+		readline.set_history_length(1000)
+		readline.append_history_file(new_h_len - cls.h_len, cls.histfile)
+
+	def prompt(self, nodeName, req):
+		print("Node %s requires %s" % (nodeName, req.name))
+		result = {}
+		for name, prompt, default in req.prompt():
+			if default:
+				prompt += " [%s]" % default
+			prompt += ": "
+
+			try:
+				response = input(prompt)
+			except EOFError:
+				print("<EOF>")
+				print("Aborted by user")
+				exit(42)
+
+			response = response.strip()
+			if not response and default is not None:
+				response = default
+
+			result[name] = response
+
+		return result
 
 def build_arg_parser():
 	import argparse
