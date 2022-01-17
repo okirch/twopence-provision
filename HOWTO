@@ -45,7 +45,7 @@ Provisioning a test cluster
 
 	  role "default" {
 		platform	"leap-15.3-selinux";
-		repositories	"testbus";
+		repositories	"twopence";
 	  }
 
 	This specifies the default configuration for all nodes (you can specify
