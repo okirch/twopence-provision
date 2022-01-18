@@ -101,7 +101,6 @@ function uc_add_help {
 
 	declare -g __uc_help_msg
 
-	# IFS=:
 	__uc_help_msg+="$(cat)"
 }
 
