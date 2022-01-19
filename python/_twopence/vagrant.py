@@ -259,7 +259,7 @@ class VagrantNodeConfig(Configurable):
 		self.update_value(config, "template")
 		self.update_value(config, "image")
 		self.update_value(config, "url")
-		self.update_value(config, "timeout", typeconv = float)
+		self.update_value(config, "timeout", typeconv = self.TYPE_FLOAT)
 
 class VagrantBackend(Backend):
 	name = "vagrant"

@@ -20,15 +20,44 @@ from .provision import ProvisioningScriptCollection, ProvisioningShellEnvironmen
 class ConfigError(Exception):
 	pass
 
-def typeconv_str_to_bool(value):
-	if value is None:
-		return False
-	value = value.lower()
-	if value in ('true', 'yes', 'on', '1'):
-		return True
-	if value in ('false', 'no', 'off', '0'):
-		return False
-	raise ValueError("Unable to convert \"%s\" to boolean" % value)
+##################################################################
+# Some of the stuff here is rather generic, ie not directly related
+# to twopence-provision, and should probably go elsewhere...
+##################################################################
+
+##################################################################
+# Type conversions
+##################################################################
+class TypeConversion(object):
+	@staticmethod
+	def from_string(value):
+		raise NotImplementedError()
+
+	@staticmethod
+	def to_string(value):
+		return str(value)
+
+class TypeConversionInt(TypeConversion):
+	@staticmethod
+	def from_string(value):
+		return int(value)
+
+class TypeConversionFloat(TypeConversion):
+	@staticmethod
+	def from_string(value):
+		return float(value)
+
+class TypeConversionBool(TypeConversion):
+	@staticmethod
+	def from_string(value):
+		if value is None:
+			return False
+		value = value.lower()
+		if value in ('true', 'yes', 'on', '1'):
+			return True
+		if value in ('false', 'no', 'off', '0'):
+			return False
+		raise ValueError("Unable to convert \"%s\" to boolean" % value)
 
 ##################################################################
 # This is a helper class that simplifies how we populate a
@@ -37,13 +66,17 @@ def typeconv_str_to_bool(value):
 class Configurable(object):
 	info_attrs = []
 
+	TYPE_INTEGER	= TypeConversionInt
+	TYPE_FLOAT	= TypeConversionFloat
+	TYPE_BOOL	= TypeConversionBool
+
 	def update_value(self, config, attr_name, config_key = None, typeconv = None):
 		if config_key is None:
 			config_key = attr_name
 		value = config.get_value(config_key)
 		if value is not None:
 			if typeconv:
-				value = typeconv(value)
+				value = typeconv.from_string(value)
 			setattr(self, attr_name, value)
 
 	def update_list(self, config, attr_name):
@@ -304,8 +337,8 @@ class Repository(Configurable):
 
 		self.update_value(config, 'url')
 		self.update_value(config, 'keyfile')
-		self.update_value(config, 'enabled', typeconv = typeconv_str_to_bool)
-		self.update_value(config, 'active', typeconv = typeconv_str_to_bool)
+		self.update_value(config, 'enabled', typeconv = self.TYPE_BOOL)
+		self.update_value(config, 'active', typeconv = self.TYPE_BOOL)
 
 	def publish(self, config):
 		if self.url:
@@ -393,8 +426,8 @@ class BuildStage(Configurable):
 
 	def configure(self, config):
 		self.update_list(config, 'run')
-		self.update_value(config, 'order', typeconv = int)
-		self.update_value(config, 'reboot', typeconv = typeconv_str_to_bool)
+		self.update_value(config, 'order', typeconv = self.TYPE_INTEGER)
+		self.update_value(config, 'reboot', typeconv = self.TYPE_BOOL)
 		self.update_value(config, 'only')
 
 		self.validate()
