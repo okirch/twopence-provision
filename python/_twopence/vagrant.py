@@ -439,7 +439,9 @@ class VagrantBackend(Backend):
 			if s.reboot:
 				formatted += VagrantRebootBlock
 			formatted += VagrantShellHeader
-			formatted += s.format(indent = "    ")
+			# Do not indent the shell script; doing so breaks stuff
+			# like HERE scripts
+			formatted += s.format()
 			formatted += VagrantShellTrailer
 			result.append(formatted)
 

@@ -48,7 +48,7 @@ Vagrant.configure("2") do |config|
 
   config.vm.allow_hosts_modification = true
 
-  @VAGRANT_PROVISION_STAGES@
+@VAGRANT_PROVISION_STAGES@
 
   if features.include? 'reboot'
     config.vm.provision :shell do |shell|
