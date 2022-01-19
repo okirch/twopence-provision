@@ -95,6 +95,18 @@ class Configurable(object):
 			result.append(object)
 		return result
 
+	def publish_value(self, config, attr_name, config_key = None, typeconv = None):
+		if config_key is None:
+			config_key = attr_name
+		value = getattr(self, attr_name, None)
+		if value not in (None, [], ""):
+			if typeconv:
+				if type(value) == list:
+					value = [typeconv.to_string(_) for _ in value]
+				else:
+					value = typeconv.to_string(value)
+			config.set_value(config_key, value)
+
 	def __str__(self):
 		info = []
 		for attr_name in self.info_attrs:
@@ -341,12 +353,10 @@ class Repository(Configurable):
 		self.update_value(config, 'active', typeconv = self.TYPE_BOOL)
 
 	def publish(self, config):
-		if self.url:
-			config.set_value("url", self.url)
-		if self.keyfile:
-			config.set_value("keyfile", self.keyfile)
-		config.set_value("enabled", str(self.enabled))
-		config.set_value("active", str(self.active))
+		self.publish_value(config, 'url')
+		self.publish_value(config, 'keyfile')
+		self.publish_value(config, 'enabled', typeconv = self.TYPE_BOOL)
+		self.publish_value(config, 'active', typeconv = self.TYPE_BOOL)
 
 class Image:
 	def __init__(self, name, backends):
@@ -433,13 +443,10 @@ class BuildStage(Configurable):
 		self.validate()
 
 	def publish(self, config):
-		if self.run:
-			config.set_value("run", self.run)
-		if self.order:
-			config.set_value("order", str(self.order))
-		config.set_value("reboot", str(self.reboot))
-		if self.only:
-			config.set_value("only", self.only)
+		self.publish_value(config, 'run')
+		self.publish_value(config, 'order', typeconv = self.TYPE_INTEGER)
+		self.publish_value(config, 'reboot', typeconv = self.TYPE_BOOL)
+		self.publish_value(config, 'only')
 
 	def merge(self, other, insert = False):
 		assert(isinstance(other, BuildStage))
@@ -560,16 +567,13 @@ class Platform(Configurable):
 		verbose("Saved platform config to %s" % path)
 
 	def publish(self, config):
-		config.set_value("vendor", self.vendor)
-		config.set_value("os", self.os)
-		if self.features:
-			config.set_value("features", self.features)
-		if self.resources:
-			config.set_value("resources", self.resources)
-		if self.keyfile:
-			config.set_value("ssh-keyfile", self.keyfile)
-		if self.build_time:
-			config.set_value('build-time', self.build_time)
+		self.publish_value(config, "vendor")
+		self.publish_value(config, "os")
+		self.publish_value(config, "features")
+		self.publish_value(config, "resources")
+		self.publish_value(config, "keyfile", "ssh-keyfile")
+		self.publish_value(config, "build_time", "build-time")
+		self.publish_value(config, "features")
 
 		self.repositories.publish(config)
 		self.stages.publish(config)
