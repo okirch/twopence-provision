@@ -289,7 +289,7 @@ class ActionDestroy(Action):
 		self.force = args.force
 
 	def perform(self):
-		topology = self.createTopology(purpose = "testing")
+		topology = self.createTopology(purpose = "destroy")
 		if not topology.detect():
 			verbose("Nothing to destroy")
 		else:
