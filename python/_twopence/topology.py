@@ -19,7 +19,7 @@ class TopologyStatus:
 	class NodeStatus:
 		def __init__(self, config):
 			self._config = config
-			self.name = config.name()
+			self.name = config.name
 			self._ipv4_address = config.get_value("ipv4_address")
 			self._ipv6_address = config.get_value("ipv6_address")
 			self._features = config.get_values("features")
