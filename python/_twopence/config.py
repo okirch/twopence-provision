@@ -11,6 +11,7 @@ import curly
 import os
 import time
 import shutil
+import copy
 
 from .instance import *
 from .logging import *
@@ -38,16 +39,22 @@ class TypeConversion(object):
 		return str(value)
 
 class TypeConversionInt(TypeConversion):
+	type_name = "int"
+
 	@staticmethod
 	def from_string(value):
 		return int(value)
 
 class TypeConversionFloat(TypeConversion):
+	type_name = "float"
+
 	@staticmethod
 	def from_string(value):
 		return float(value)
 
 class TypeConversionBool(TypeConversion):
+	type_name = "bool"
+
 	@staticmethod
 	def from_string(value):
 		if value is None:
@@ -59,6 +66,249 @@ class TypeConversionBool(TypeConversion):
 			return False
 		raise ValueError("Unable to convert \"%s\" to boolean" % value)
 
+
+##################################################################
+# Define correspondence between attributes in a curly config file,
+# and a python object's members
+##################################################################
+class Schema(object):
+	debug_init_enabled = False
+	debug_enabled = False
+
+	def __init__(self, name, key):
+		self.name = name
+		self.key = key or name
+
+	@classmethod
+	def debug_init(klass, msg):
+		if klass.debug_init_enabled:
+			print(f"DEBUG: {msg}")
+
+	@classmethod
+	def debug(klass, msg):
+		if klass.debug_enabled:
+			print(f"DEBUG: {msg}")
+
+	@staticmethod
+	def initializeAll(ctx):
+		class_type = type(object)
+
+		for thing in ctx.values():
+			if type(thing) is not class_type:
+				continue
+
+			if issubclass(thing, Configurable):
+				schema = getattr(thing, "schema", None)
+				if schema:
+					Schema.initializeClass(thing)
+
+				Schema.initializeAll(thing.__dict__)
+			elif issubclass(thing, AttributeSchema) and thing != AttributeSchema or \
+			     issubclass(thing, NodeSchema) and thing != NodeSchema:
+				# export class FooAttributeSchema as Schema.FooAttribute
+				Schema.publishSchemaClass(thing)
+
+	@staticmethod
+	def initializeClass(klass):
+		assert(klass.schema is not None)
+
+		klass._attributes = {}
+		klass._nodes = {}
+
+		Schema.debug_init("%s: initialize schema" % (klass.__name__,))
+		for item in klass.schema:
+			Schema.debug_init(f"   {item}")
+			if isinstance(item, AttributeSchema):
+				klass._attributes[item.key] = item
+			elif isinstance(item, NodeSchema):
+				klass._nodes[item.key] = item
+			else:
+				raise TypeError(item.__class__.__name__)
+
+	def publishSchemaClass(klass):
+		name = klass.__name__
+		assert(name.endswith('Schema'))
+		name = name[:-6]
+		Schema.debug_init("Publish %s as Schema.%s" % (klass.__name__, name))
+		setattr(Schema, name, klass)
+
+class AttributeSchema(Schema):
+	def __init__(self, name, key = None, typeconv = None):
+		super().__init__(name, key)
+		self.typeconv = typeconv
+
+	def initialize(self, obj):
+		setattr(obj, self.name, copy.copy(self.default_value))
+
+	def __str__(self):
+		info = [self.name]
+		if self.key != self.name:
+			info.append("key='%s'" % self.key)
+		if self.typeconv:
+			info.append("type=%s" % self.typeconv.type_name)
+		return "%s(%s)" % (self.__class__.__name__, ", ".join(info))
+
+	# same function for scalar and list
+	def publish(self, obj, config):
+		value = getattr(obj, self.name, None)
+		if value not in (None, [], ""):
+			typeconv = self.typeconv
+			if typeconv:
+				if type(value) == list:
+					value = [typeconv.to_string(_) for _ in value]
+				else:
+					value = typeconv.to_string(value)
+			Schema.debug("   %s = %s" % (self.key, value))
+			config.set_value(self.key, value)
+
+class ScalarAttributeSchema(AttributeSchema):
+	def update(self, obj, attr):
+		value = attr.value
+		if value is not None:
+			if self.typeconv:
+				value = self.typeconv.from_string(value)
+			setattr(obj, self.name, value)
+
+class StringAttributeSchema(ScalarAttributeSchema):
+	default_value = None
+
+class BooleanAttributeSchema(ScalarAttributeSchema):
+	default_value = False
+
+	def __init__(self, name, key = None):
+		super().__init__(name, key, typeconv = TypeConversionBool)
+
+class IntegerAttributeSchema(ScalarAttributeSchema):
+	default_value = 0
+
+	def __init__(self, name, key = None):
+		super().__init__(name, key, typeconv = TypeConversionInt)
+
+class FloatAttributeSchema(ScalarAttributeSchema):
+	def __init__(self, name, key = None, default_value = 0.0):
+		super().__init__(name, key, typeconv = TypeConversionInt)
+		self.default_value = default_value
+
+class ListAttributeSchema(AttributeSchema):
+	default_value = []
+
+	def update(self, obj, attr):
+		# attr.values may return None or []
+		values = attr.values
+		if values:
+			if self.typeconv:
+				values = [self.typeconv.from_string(_) for _ in values]
+
+			current = getattr(obj, self.name)
+			assert(type(current) == list)
+			setattr(obj, self.name, current + values)
+
+##################################################################
+# Define correspondence between nodes in a curly file, and
+# objects in python
+##################################################################
+class NodeSchema(Schema):
+	def __init__(self, name, key, containerClass):
+		super().__init__(name, key)
+		self.containerClass = containerClass
+
+	def initialize(self, obj):
+		setattr(obj, self.name, self.containerClass())
+
+	def __str__(self):
+		info = [self.name]
+		if self.key != self.name:
+			info.append("key='%s'" % self.key)
+		info.append("container=%s" % self.containerClass)
+		return "%s(%s)" % (self.__class__.__name__, ", ".join(info))
+
+	def getContainerFor(self, obj):
+		containerObject = getattr(obj, self.name, None)
+		if containerObject is None:
+			raise ValueError("Node %s has no member %s" % (obj, self.name))
+		return containerObject
+
+	def update(self, obj, node):
+		self.debug("Updating %s object's %s by creating %s(%s)" % (
+			obj.__class__.__name__, self.name,
+			node.type, node.name))
+
+		container = self.getContainerFor(obj)
+		item = container.create(node.name)
+		item.configure(node)
+
+		if True:
+			Schema.debug("Defined %s" % item)
+
+	def publish(self, obj, node):
+		self.debug("Publishing %s object's %s" % (obj.__class__.__name__, self.name))
+
+		container = self.getContainerFor(obj)
+		container.publish(node)
+
+class DictNodeSchema(NodeSchema):
+	def __init__(self, name, key = None, containerClass = None, itemClass = None):
+		if containerClass is None:
+			if not itemClass:
+				raise ValueError("DictNodeSchema must specifiy either container or item class")
+
+			containerClass = lambda: ConfigDict(key or name, itemClass)
+
+		super().__init__(name, key, containerClass)
+
+class ListNodeSchema(NodeSchema):
+	def __init__(self, name, key = None, itemClass = None):
+		containerClass = lambda: ConfigList(key or name, itemClass)
+		super().__init__(name, key, containerClass)
+
+	def create(self, name):
+		return ConfigRequirement.Item(name)
+
+class ParameterNodeSchema(NodeSchema):
+	def __init__(self, name, key = None):
+		super().__init__(name, key, containerClass = dict)
+
+	def update(self, obj, node):
+		container = self.getContainerFor(obj)
+		for attr in node.attributes:
+			container[attr.name] = attr.value
+
+	def publish(self, obj, node):
+		container = self.getContainerFor(obj)
+
+		child = node.add_child(self.key)
+		for key, value in container.items():
+			child.set_value(key, value)
+
+##################################################################
+# Used to ignore nodes or attrs in a config file
+##################################################################
+class IgnoredAttributeSchema(AttributeSchema):
+	def __init__(self, key):
+		super().__init__(key, key)
+
+	def initialize(self, obj):
+		pass
+
+	def update(self, obj, config):
+		pass
+
+	def publish(self, obj, config):
+		pass
+
+class IgnoredNodeSchema(NodeSchema):
+	def __init__(self, key):
+		super().__init__(key, key, None)
+
+	def initialize(self, obj):
+		pass
+
+	def update(self, obj, config):
+		pass
+
+	def publish(self, obj, config):
+		pass
+
 ##################################################################
 # This is a helper class that simplifies how we populate a
 # python object from a curly config file.
@@ -66,46 +316,52 @@ class TypeConversionBool(TypeConversion):
 class Configurable(object):
 	info_attrs = []
 
-	TYPE_INTEGER	= TypeConversionInt
-	TYPE_FLOAT	= TypeConversionFloat
-	TYPE_BOOL	= TypeConversionBool
+	schema = None
+	_attributes = None
+	_nodes = None
 
-	def update_value(self, config, attr_name, config_key = None, typeconv = None):
-		if config_key is None:
-			config_key = attr_name
-		value = config.get_value(config_key)
-		if value is not None:
-			if typeconv:
-				value = typeconv.from_string(value)
-			setattr(self, attr_name, value)
+	def __init__(self):
+		if self.schema:
+			for info in self._attributes.values():
+				info.initialize(self)
 
-	def update_list(self, config, attr_name):
-		# get_values may return None or []
-		value = config.get_values(attr_name)
-		if value:
-			current = getattr(self, attr_name)
-			assert(type(current) == list)
-			setattr(self, attr_name, current + value)
+			for info in self._nodes.values():
+				info.initialize(self)
 
-	def configure_children(self, config, block_name, factory):
-		result = []
-		for name in config.get_children(block_name):
-			object = factory(name)
-			object.configure(config.get_child(block_name, name))
-			result.append(object)
-		return result
+	def configureFromPath(self, path):
+		debug("Loading %s" % path)
+		config = curly.Config(path)
+		self.configure(config.tree())
 
-	def publish_value(self, config, attr_name, config_key = None, typeconv = None):
-		if config_key is None:
-			config_key = attr_name
-		value = getattr(self, attr_name, None)
-		if value not in (None, [], ""):
-			if typeconv:
-				if type(value) == list:
-					value = [typeconv.to_string(_) for _ in value]
-				else:
-					value = typeconv.to_string(value)
-			config.set_value(config_key, value)
+	def configure(self, config):
+		assert(self.schema)
+		if not config:
+			return
+
+		Schema.debug(f"Configuring {self}")
+		for attr in config.attributes:
+			Schema.debug("   %s = %s" % (attr.name, attr.values))
+			info = self.__class__._attributes.get(attr.name)
+			if info is None:
+				raise KeyError("Unknown configuration key %s in node %s" % (attr.name, config))
+			info.update(self, attr)
+
+		for child in config:
+			Schema.debug("   %s %s { ... }" % (child.type, child.name))
+			info = self.__class__._nodes.get(child.type)
+			if info is None:
+				raise KeyError("Unknown configuration key %s in node %s" % (child.type, config))
+			info.update(self, child)
+
+	def publish(self, config):
+		assert(self.schema)
+
+		Schema.debug(f"Publishing {self}")
+		# Write out all bits of information in the order defined by the schema
+		for info in self.schema:
+			Schema.debug(f"{info}.publish({self})")
+			info.publish(self, config)
+		return
 
 	def __str__(self):
 		info = []
@@ -118,6 +374,29 @@ class Configurable(object):
 			else:
 				info.append("%s=%s" % (attr_name, value))
 		return "%s(%s)" % (self.__class__.__name__, ", ".join(info))
+
+# common case: a Configurable with a name, represented by
+#	type name {
+#		bla; blah; blah;
+#	}
+class NamedConfigurable(Configurable):
+	def __init__(self, name):
+		super().__init__()
+		self.name = name
+
+class ConfigList(list):
+	def __init__(self, type_name, item_class, verbose = False):
+		self.type_name = type_name
+		self.item_class = item_class
+		self.verbose = verbose
+
+	def __str__(self):
+		return "[%s]" % " ".join([str(_) for _ in self])
+
+	def create(self, name):
+		item = self.item_class(name)
+		self.append(item)
+		return item
 
 class ConfigDict(dict):
 	def __init__(self, type_name, item_class, verbose = False):
@@ -195,23 +474,20 @@ class ConfigDict(dict):
 #  TWOPENCE_INFO_SUSE_REGISTRATION_EMAIL
 #  TWOPENCE_INFO_SUSE_REGISTRATION_REGCODE
 #
-class ConfigRequirement(Configurable):
+class ConfigRequirement(NamedConfigurable):
 	info_attrs = ['name', 'provides', 'valid']
 
-	class Item(Configurable):
-		def __init__(self, name, config):
-			self.name = name
-			self.prompt = None
-			self.default = None
+	class Item(NamedConfigurable):
+		schema = [
+			StringAttributeSchema('prompt'),
+			StringAttributeSchema('default'),
+		]
 
-			self.update_value(config, 'prompt')
-			self.update_value(config, 'default')
-
-	class Fnord(Configurable):
+	class Fnord(NamedConfigurable):
 		info_attrs = ['name']
 
 		def __init__(self, name, data = None):
-			self.name = name
+			super().__init__(name)
 			self.data = data or {}
 
 		def configure(self, config):
@@ -222,20 +498,19 @@ class ConfigRequirement(Configurable):
 			for key, value in self.data.items():
 				curlyNode.set_value(key, value)
 
-	def __init__(self, name):
-		self.name = name
-		self.provides = name
-		self.valid = []
-		self.items = []
+	schema = [
+		StringAttributeSchema('provides'),
+		ListAttributeSchema('valid'),
+		ListNodeSchema('_items', 'item', itemClass = Item),
+	]
 
+	def __init__(self, name):
+		super().__init__(name)
 		self._cache = None
 
-	def configure(self, config):
-		self.update_list(config, 'valid')
-		self.update_value(config, 'provides')
-		for name in config.get_children("item"):
-			item = self.Item(name, config.get_child("item", name))
-			self.items.append(item)
+	@property
+	def items(self):
+		return iter(self._items)
 
 	def prompt(self):
 		for item in self.items:
@@ -333,46 +608,38 @@ class BackendDict(ConfigDict):
 		saved = self.create(other.name)
 		saved.configs = other.configs + saved.configs
 
-class Repository(Configurable):
+	def publish(self, config):
+		for saved in self.values():
+			grand_child = config.add_child("backend", saved.name)
+			for config in saved.configs:
+				for attr_name in config.get_attributes():
+					values = config.get_values(attr_name)
+					if not values:
+						values = [""]
+					grand_child.set_value(attr_name, values)
+
+class Repository(NamedConfigurable):
 	info_attrs = ['name', 'url']
 
-	def __init__(self, name):
-		self.name = name
-		self.url = None
-		self.keyfile = None
-		self.enabled = False
-		self.active = False
+	schema = [
+		StringAttributeSchema('url'),
+		StringAttributeSchema('keyfile'),
+		BooleanAttributeSchema('enabled'),
+		BooleanAttributeSchema('active'),
+	]
 
-	def configure(self, config):
-		if not config:
-			return
-
-		self.update_value(config, 'url')
-		self.update_value(config, 'keyfile')
-		self.update_value(config, 'enabled', typeconv = self.TYPE_BOOL)
-		self.update_value(config, 'active', typeconv = self.TYPE_BOOL)
-
-	def publish(self, config):
-		self.publish_value(config, 'url')
-		self.publish_value(config, 'keyfile')
-		self.publish_value(config, 'enabled', typeconv = self.TYPE_BOOL)
-		self.publish_value(config, 'active', typeconv = self.TYPE_BOOL)
-
-class Image:
+class obsolete_xxxx_Image:
 	def __init__(self, name, backends):
 		self.name = name
 		self.backends = backends
 
-class Imageset(Configurable):
+class Imageset(NamedConfigurable):
 	info_attrs = ['name']
 
-	class Architecture(Configurable):
-		def __init__(self, name):
-			self.name = name
-			self.backends = BackendDict()
-
-		def configure(self, config):
-			self.backends.configure(config)
+	class Architecture(NamedConfigurable):
+		schema = [
+			DictNodeSchema('backends', 'backend', containerClass = BackendDict),
+		]
 
 		def __str__(self):
 			return "Imageset.Arch(%s)" % self.name
@@ -380,17 +647,14 @@ class Imageset(Configurable):
 		def getBackend(self, name):
 			return self.backends.get(name)
 
-	def __init__(self, name):
-		self.name = name
-		self.architectures = ConfigDict("architecture", self.Architecture, verbose = True)
-
-	def configure(self, config):
-		self.architectures.configure(config)
+	schema = [
+		DictNodeSchema('architectures', 'architecture', itemClass = Architecture),
+	]
 
 	def getArchitecture(self, name):
 		return self.architectures.get(name)
 
-class BuildStage(Configurable):
+class BuildStage(NamedConfigurable):
 	info_attrs = ['name', 'reboot', 'run', 'only']
 
 	defaultOrder = {
@@ -409,12 +673,18 @@ class BuildStage(Configurable):
 		'cleanup'	: 'cleanup',
 	}
 
+	schema = [
+		StringAttributeSchema('only'),
+		ListAttributeSchema('run'),
+		IntegerAttributeSchema('order'),
+		BooleanAttributeSchema('reboot'),
+	]
+
 	def __init__(self, name, category = None, order = None):
-		self.name = name
-		self.run = []
+		super().__init__(name)
+
+		# What is this for?
 		self.commands = []
-		self.only = None
-		self.reboot = False
 
 		if category is None:
 			category = self.defaultCategory.get(name)
@@ -435,18 +705,13 @@ class BuildStage(Configurable):
 		self.reboot = False
 
 	def configure(self, config):
-		self.update_list(config, 'run')
-		self.update_value(config, 'order', typeconv = self.TYPE_INTEGER)
-		self.update_value(config, 'reboot', typeconv = self.TYPE_BOOL)
-		self.update_value(config, 'only')
-
+		super().configure(config)
 		self.validate()
 
-	def publish(self, config):
-		self.publish_value(config, 'run')
-		self.publish_value(config, 'order', typeconv = self.TYPE_INTEGER)
-		self.publish_value(config, 'reboot', typeconv = self.TYPE_BOOL)
-		self.publish_value(config, 'only')
+	def validate(self):
+		for path in self.paths():
+			if not os.path.isfile(path):
+				raise ConfigError("Script snippet \"%s\" does not exist" % path)
 
 	def merge(self, other, insert = False):
 		assert(isinstance(other, BuildStage))
@@ -455,11 +720,6 @@ class BuildStage(Configurable):
 		else:
 			self.run = self.run + other.run
 		self.reboot = self.reboot or other.reboot
-
-	def validate(self):
-		for path in self.paths():
-			if not os.path.isfile(path):
-				raise ConfigError("Script snippet \"%s\" does not exist" % path)
 
 	def load(self):
 		result = []
@@ -485,50 +745,49 @@ class BuildStage(Configurable):
 
 		return result
 
-class Platform(Configurable):
-	info_attrs = ['name', 'image', 'vendor', 'os', 'imagesets', 'requires', 'features', 'install', 'start', 'resources']
+class Action(NamedConfigurable):
+	info_attrs = ['name', 'type']
+
+	schema = [
+		StringAttributeSchema('script'),
+		StringAttributeSchema('function'),
+		StringAttributeSchema('type'),
+	]
+
+	def __init__(self, name, type = "shell"):
+		super().__init__(name)
+		self.type = type
+		self.arguments = []
+
+class Platform(NamedConfigurable):
+	info_attrs = ['name', 'image', 'vendor', 'os', 'imagesets', 'requires',
+			'repositories',
+			'features', 'install', 'start', 'resources']
+
+	schema = [
+		StringAttributeSchema('vendor'),
+		StringAttributeSchema('os'),
+		StringAttributeSchema('arch'),
+		StringAttributeSchema('image'),		# obsolete?
+		ListAttributeSchema('features'),
+		ListAttributeSchema('resources'),
+		ListAttributeSchema('requires'),
+		StringAttributeSchema('keyfile', 'ssh-keyfile'),
+		StringAttributeSchema('build_time', 'build-time'),
+		ListAttributeSchema('install'),
+		ListAttributeSchema('start'),
+
+		DictNodeSchema('repositories', 'repository', itemClass = Repository),
+		DictNodeSchema('imagesets', 'imageset', itemClass = Imageset),
+		DictNodeSchema('stages', 'stage', itemClass = BuildStage),
+		DictNodeSchema('backends', 'backend', containerClass = BackendDict),
+	]
 
 	def __init__(self, name):
-		self.name = name
-		self.arch = None
-		self.image = None
-		self.keyfile = None
-		self.repositories = ConfigDict("repository", Repository)
-		self.imagesets = ConfigDict("imageset", Imageset)
-		self.stages = ConfigDict("stage", BuildStage)
-		self.backends = BackendDict()
-		self.install = []
-		self.start = []
-		self.requires = []
-		self.features = []
-		self.resources = []
-		self.vendor = None
-		self.os = None
-		self.build_time = None
+		super().__init__(name)
 
 		# used during build, exclusively
 		self._raw_key = None
-
-	def configure(self, config):
-		if not config:
-			return
-
-		self.update_value(config, 'image')
-		self.update_value(config, 'keyfile')
-		self.update_value(config, 'keyfile', 'ssh-keyfile')
-		self.update_list(config, 'requires')
-		self.update_list(config, 'features')
-		self.update_list(config, 'install')
-		self.update_list(config, 'start')
-		self.update_list(config, 'resources')
-		self.update_value(config, 'vendor')
-		self.update_value(config, 'os')
-		self.update_value(config, 'build_time', 'build-time')
-
-		self.repositories.configure(config)
-		self.imagesets.configure(config)
-		self.backends.configure(config)
-		self.stages.configure(config)
 
 	def getRepository(self, name):
 		return self.repositories.get(name)
@@ -565,27 +824,6 @@ class Platform(Configurable):
 		path = os.path.join(self.platformdir, "%s.conf" % self.name)
 		new_config.save(path)
 		verbose("Saved platform config to %s" % path)
-
-	def publish(self, config):
-		self.publish_value(config, "vendor")
-		self.publish_value(config, "os")
-		self.publish_value(config, "features")
-		self.publish_value(config, "resources")
-		self.publish_value(config, "keyfile", "ssh-keyfile")
-		self.publish_value(config, "build_time", "build-time")
-		self.publish_value(config, "features")
-
-		self.repositories.publish(config)
-		self.stages.publish(config)
-
-		for saved in self.backends.values():
-			grand_child = config.add_child("backend", saved.name)
-			for config in saved.configs:
-				for attr_name in config.get_attributes():
-					values = config.get_values(attr_name)
-					if not values:
-						values = [""]
-					grand_child.set_value(attr_name, values)
 
 	def getOutputDir(self, name):
 		path = os.path.expanduser(twopence_user_data_dir)
@@ -712,63 +950,37 @@ class Platform(Configurable):
 		saved = self.backends.create(backendConfigs.name)
 		saved.configs = backendConfigs.configs + saved.configs
 
-class Role(Configurable):
-	info_attrs = ["name", "platform"]
+class Role(NamedConfigurable):
+	info_attrs = ["name", "platform", "repositories", "features",]
 
-	def __init__(self, name):
-		self.name = name
-		self.platform = None
+	schema = [
+		StringAttributeSchema('platform'),
+		ListAttributeSchema('repositories'),
+		ListAttributeSchema('install'),
+		ListAttributeSchema('start'),
+		ListAttributeSchema('features'),
+	]
 
-		self.repositories = []
-		self.install = []
-		self.start = []
-		self.features = []
-
-	def configure(self, config):
-		if not config:
-			return
-
-		self.update_value(config, 'platform')
-		self.update_list(config, 'repositories')
-		self.update_list(config, 'install')
-		self.update_list(config, 'start')
-		self.update_list(config, 'features')
-
-class Node(Configurable):
+class Node(NamedConfigurable):
 	info_attrs = ["name", "role", "platform", "build"]
 
-	def __init__(self, name):
-		self.name = name
-		self.role = name
-		self.platform = None
-		self.build = []
-		self.install = []
-		self.start = []
-		self._backends = BackendDict()
-
-	def configure(self, config):
-		if not config:
-			return
-
-		self._backends.configure(config)
-		self.update_value(config, 'role')
-		self.update_list(config, 'build')
-		self.update_value(config, 'platform')
-		self.update_list(config, 'install')
-		self.update_list(config, 'start')
+	schema = [
+		StringAttributeSchema('role'),
+		StringAttributeSchema('platform'),
+		ListAttributeSchema('build'),
+		ListAttributeSchema('install'),
+		ListAttributeSchema('start'),
+		DictNodeSchema("_backends", "backend", BackendDict),
+	]
 
 class Build(Platform):
 	info_attrs = Platform.info_attrs + ['base_platform']
 
-	def __init__(self, name):
-		super().__init__(name)
-		self.base_platform = None
-		self.template = None
-
-	def configure(self, config):
-		super().configure(config)
-		self.update_value(config, 'base_platform', 'base-platform')
-		self.update_value(config, 'template')
+	schema = Platform.schema + [
+		StringAttributeSchema('base_platform', key = 'base-platform'),
+		# obsolete:
+		StringAttributeSchema('template'),
+	]
 
 class EmptyNodeConfig:
 	def __init__(self, name):
@@ -999,22 +1211,31 @@ class Config(Configurable):
 		twopence_global_config_dir,
 	]
 
+	schema = [
+		IgnoredAttributeSchema('default-port'),
+		IgnoredNodeSchema('defaults'),
+		StringAttributeSchema('workspaceRoot', 'workspace-root'),
+		StringAttributeSchema('workspace'),
+		StringAttributeSchema('testcase'),
+		DictNodeSchema('_backends', 'backend', containerClass = BackendDict),
+		DictNodeSchema('_platforms', 'platform', itemClass = Platform),
+		DictNodeSchema('_roles', 'role', itemClass = Role),
+		DictNodeSchema('_nodes', 'node', itemClass = Node),
+		DictNodeSchema('_builds', 'build', itemClass = Build),
+		DictNodeSchema('_requirements', 'requirement', itemClass = ConfigRequirement),
+		ListAttributeSchema('_repositories', 'repository'),
+		ParameterNodeSchema('_parameters', 'parameters'),
+	]
+
 	def __init__(self, workspace):
+		super().__init__()
+
 		self.workspace = workspace
 		self.logspace = None
-		self.testcase = None
+
 		self.status = None
 		self._requirementsManager = None
 		self._user_config_dirs = []
-
-		self._backends = BackendDict()
-		self._platforms = ConfigDict("platform", Platform, verbose = True)
-		self._roles = ConfigDict("role", Role, verbose = True)
-		self._nodes = ConfigDict("node", Node, verbose = True)
-		self._builds = ConfigDict("build", Build, verbose = True)
-		self._requirements = ConfigDict("requirement", ConfigRequirement, verbose = True)
-		self._repositories = []
-		self._parameters = {}
 
 		self.defaultRole = self._roles.create("default")
 
@@ -1038,20 +1259,15 @@ class Config(Configurable):
 	class PlatformInfo(Configurable):
 		info_attrs = ['path']
 
+		schema = [
+			DictNodeSchema('_platforms', 'platform', itemClass = Platform),
+			DictNodeSchema('_builds', 'build', itemClass = Build),
+			StringAttributeSchema('build_time', 'build-time'),
+		]
+
 		def __init__(self, path):
 			self.path = path
-
-			self._platforms = ConfigDict("platform", Platform, verbose = True)
-			self._builds = ConfigDict("build", Build, verbose = True)
-			self.build_time = None
-
-			config = curly.Config(path)
-			self.configure(config.tree())
-
-		def configure(self, tree):
-			self._platforms.configure(tree)
-			self._builds.configure(tree)
-			self.update_value(tree, 'build_time', 'build-time')
+			self.configureFromPath(path)
 
 		@property
 		def builds(self):
@@ -1076,30 +1292,8 @@ class Config(Configurable):
 		if filename is None:
 			return False
 
-		debug("Loading %s" % filename)
-		config = curly.Config(filename)
-
-		self.configure(config.tree())
+		self.configureFromPath(filename)
 		return True
-
-	def configure(self, tree):
-		self._backends.configure(tree)
-		self._platforms.configure(tree)
-		self._roles.configure(tree)
-		self._nodes.configure(tree)
-		self._builds.configure(tree)
-		self._requirements.configure(tree)
-
-		self.update_value(tree, 'workspaceRoot', 'workspace-root')
-		self.update_value(tree, 'workspace')
-		self.update_value(tree, 'testcase')
-
-		# commonly, parameters are defined in testrun.conf, but
-		# the may also come from any other config file.
-		child = tree.get_child("parameters")
-		if child:
-			for name in child.get_attributes():
-				self._parameters[name] = child.get_value(name)
 
 	def validate(self, purpose = None):
 		if purpose == "testing":
@@ -1296,3 +1490,8 @@ class RequirementsManager(object):
 				response = req.buildResponse(nodeName, data)
 
 		return response
+
+##################################################################
+# This must happen at the very end of the file:
+##################################################################
+Schema.initializeAll(globals())

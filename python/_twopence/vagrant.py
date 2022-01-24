@@ -16,7 +16,7 @@ from .backend import Backend
 from .runner import Runner
 from .instance import *
 from .provision import *
-from .config import Config, Configurable, ConfigError
+from .config import Config, Configurable, ConfigError, Schema
 from .util import DottedNumericVersion
 
 VagrantRebootBlock = '''
@@ -248,35 +248,33 @@ class VagrantInstance(GenericInstance):
 class VagrantNodeConfig(Configurable):
 	info_attrs = ['template', 'image', 'url']
 
+	schema = [
+		Schema.StringAttribute('template'),
+		Schema.StringAttribute('image'),
+		Schema.StringAttribute('url'),
+		Schema.FloatAttribute('timeout', default_value = 120),
+	]
+
 	def __init__(self):
 		super().__init__()
-		self.image = None
-		self.url = None
-		self.template = None
-		self.timeout = 120
-
-	def configure(self, config):
-		self.update_value(config, "template")
-		self.update_value(config, "image")
-		self.update_value(config, "url")
-		self.update_value(config, "timeout", typeconv = self.TYPE_FLOAT)
 
 class VagrantBackend(Backend):
 	name = "vagrant"
+
+	schema = [
+		Schema.StringAttribute('template'),
+		Schema.FloatAttribute('timeout', default_value = 120),
+	]
 
 	def __init__(self):
 		debug("Created vagrant backend")
 		super().__init__()
 
-		self.template = None
 		self.runner = Runner()
 		self.provisioner = Provisioner()
 
 		# the vagrant box listing
 		self.listing = None
-
-	def configure(self, config):
-		self.update_value(config, 'template')
 
 	def configureNode(self, node, config):
 		node.vagrant = VagrantNodeConfig()
@@ -711,3 +709,9 @@ class VagrantBackend(Backend):
 
 	def runShellCmd(self, *args, **kwargs):
 		return self.runner.run(*args, **kwargs)
+
+##################################################################
+# Initialize the schema for any classes that use
+# Configurable's schema approach
+##################################################################
+Schema.initializeAll(globals())

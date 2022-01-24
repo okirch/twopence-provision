@@ -10,6 +10,7 @@ from .config import Configurable
 
 class Backend(Configurable):
 	def __init__(self):
+		super().__init__()
 		# By default, auto-update images that we get from remote
 		self.auto_update = True
 
