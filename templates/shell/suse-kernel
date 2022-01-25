@@ -1,0 +1,8 @@
+function update_kernel_commandline {
+
+	echo "Updating kernel command line: $*"
+	for word; do
+		/usr/sbin/sysconf_addword /etc/default/grub GRUB_CMDLINE_LINUX_DEFAULT "$word"
+	done
+	/sbin/update-bootloader
+}

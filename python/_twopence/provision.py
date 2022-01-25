@@ -17,6 +17,7 @@ class ProvisioningScriptSnippet:
 		self.name = name
 		self.reboot = reboot
 		self.script = lines + []
+		self.functionsLoaded = set()
 
 	def __str__(self):
 		return "%s(%s, %u lines)" % (self.__class__.__name__, self.name, len(self.script))
@@ -25,7 +26,7 @@ class ProvisioningScriptSnippet:
 		self.script.append(cmd)
 
 	def merge(self, stage):
-		self.script += stage.load()
+		self.script += stage.load(self.functionsLoaded)
 
 	def format(self, indent = ""):
 		result = ""

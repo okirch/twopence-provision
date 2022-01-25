@@ -1,0 +1,21 @@
+#
+# This script snippet adds SUSE's internal CA certificate so that
+# we can establish SSL connections to services like the internal
+# build service
+#
+
+function suse_install_cacert {
+	ibs_build_target=$1
+
+	if [ -z "$ibs_build_target" ]; then
+		echo "Usage: suse_install_cacert IBS_BUILD_TARGET" >&2
+		exit 1
+	fi
+
+	infra_repo_url=https://download.opensuse.org/repositories/openSUSE:/infrastructure/$ibs_build_target
+	rpm --import $infra_repo_url/repodata/repomd.xml.key
+	zypper -n addrepo $infra_repo_url infrastructure
+	zypper -n refresh
+	zypper -n install ca-certificates-suse
+	zypper mr -d infrastructure
+}

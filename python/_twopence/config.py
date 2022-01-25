@@ -628,11 +628,6 @@ class Repository(NamedConfigurable):
 		BooleanAttributeSchema('active'),
 	]
 
-class obsolete_xxxx_Image:
-	def __init__(self, name, backends):
-		self.name = name
-		self.backends = backends
-
 class Imageset(NamedConfigurable):
 	info_attrs = ['name']
 
@@ -654,28 +649,65 @@ class Imageset(NamedConfigurable):
 	def getArchitecture(self, name):
 		return self.architectures.get(name)
 
+class BuildInvocation:
+	def __init__(self, string):
+		self.action = None
+		self.path = None
+		self.command = None
+		self._arguments = ""
+
+		w = string.split(maxsplit = 1)
+		self.name = w.pop(0)
+		if w:
+			self._arguments = w.pop(0)
+
+	def __str__(self):
+		return f"{self.name} {self._arguments}"
+
+	def resolve(self, actionLibrary):
+		action = actionLibrary.get(self.name)
+		if action is None:
+			raise ConfigError(f"Provisioning stage refers unknown action {self.name}")
+
+		self.action = action
+		if action.command:
+			self.command = f"{action.command} {self._arguments}"
+			self.path = None
+		elif action.function:
+			self.command = f"{action.function} {self._arguments}"
+			self.path = action.path
+		else:
+			raise ConfigError(f"Action {self.name} does not specify command or function")
+
 class BuildStage(NamedConfigurable):
 	info_attrs = ['name', 'reboot', 'run', 'only']
 
 	defaultOrder = {
-		'prep'		: 0,
-		'install'	: 1,
-		'provision'	: 2,
-		'build'		: 10,
-		'other'		: 50,
-		'cleanup'	: 100,
+		'prep'			: 0,
+		'install'		: 1,
+		'provision'		: 2,
+
+		# built-in stages
+		'add-repositories'	: 10,
+		'install-packages'	: 11,
+		'start-services'	: 12,
+
+		'build'			: 20,
+		'other'			: 50,
+		'cleanup'		: 100,
 	}
 	defaultCategory = {
-		'prep'		: 'prep',
-		'install'	: 'prep',
-		'provision'	: 'prep',
-		'build'		: 'build',
-		'cleanup'	: 'cleanup',
+		'prep'			: 'prep',
+		'install'		: 'prep',
+		'provision'		: 'prep',
+		'build'			: 'build',
+		'cleanup'		: 'cleanup',
 	}
 
 	schema = [
 		StringAttributeSchema('only'),
 		ListAttributeSchema('run'),
+		ListAttributeSchema('perform'),
 		IntegerAttributeSchema('order'),
 		BooleanAttributeSchema('reboot'),
 	]
@@ -700,6 +732,8 @@ class BuildStage(NamedConfigurable):
 			order = 50
 		self.order = order
 
+		self.invocations = []
+
 	def zap(self):
 		self.run = []
 		self.reboot = False
@@ -713,17 +747,48 @@ class BuildStage(NamedConfigurable):
 			if not os.path.isfile(path):
 				raise ConfigError("Script snippet \"%s\" does not exist" % path)
 
+		self.invocations = []
+		for cmd in self.perform:
+			if cmd:
+				self.addInvocation(cmd)
+
+	def addInvocation(self, cmd):
+		debug(f"Action {self.name}: add invocation {cmd}")
+		invocation = BuildInvocation(cmd)
+		self.invocations.append(invocation)
+
+	# A stage can execute individual actions, which often refer to a
+	# script snippet that defines one or more shell functions
+	# We resolve these action names once the platform definition is
+	# complete.
+	def resolveActions(self, actionLibrary):
+		if self.invocations:
+			# debug(f"{self} resolving actions");
+			for invocation in self.invocations:
+				# debug(f"  {invocation.name}")
+				invocation.resolve(actionLibrary)
+				if invocation.path:
+					# debug(f"    uses {invocation.path}")
+					pass
+
 	def merge(self, other, insert = False):
 		assert(isinstance(other, BuildStage))
 		if insert:
 			self.run = other.run + self.run
+			self.perform = other.perform + self.perform
+			self.invocations = other.invocations + self.invocations
 		else:
 			self.run = self.run + other.run
+			self.perform = self.perform + other.perform
+			self.invocations = self.invocations + other.invocations
 		self.reboot = self.reboot or other.reboot
 
-	def load(self):
+	def load(self, alreadyLoaded = None):
 		result = []
 		for path in self.paths():
+			if path in alreadyLoaded:
+				continue
+
 			debug("Trying to load script snippet from %s" % path)
 
 			result += ["", "# BEGIN %s" % path]
@@ -731,7 +796,14 @@ class BuildStage(NamedConfigurable):
 				result += f.read().split('\n')
 				result.append("# END OF %s" % path)
 
+			alreadyLoaded.add(path)
+
 		result += self.commands
+
+		for invocation in self.invocations:
+			result += ["",
+				f"# Expanded from {invocation.name}",
+				invocation.command]
 
 		return result
 
@@ -743,21 +815,33 @@ class BuildStage(NamedConfigurable):
 			path = os.path.join(stagedir, name)
 			result.append(path)
 
+		stagedir = "/usr/lib/twopence/provision"
+		for invocation in self.invocations:
+			if invocation.path is not None:
+				debug(f"path for {invocation} is {invocation.path}")
+				path = os.path.join(stagedir, invocation.path)
+				result.append(path)
+
 		return result
 
 class Action(NamedConfigurable):
-	info_attrs = ['name', 'type']
+	info_attrs = ['name']
 
+
+class ShellAction(Action):
 	schema = [
 		StringAttributeSchema('script'),
 		StringAttributeSchema('function'),
-		StringAttributeSchema('type'),
+		StringAttributeSchema('command'),
 	]
 
-	def __init__(self, name, type = "shell"):
+	def __init__(self, name):
 		super().__init__(name)
-		self.type = type
 		self.arguments = []
+
+	@property
+	def path(self):
+		return f"shell/{self.script}"
 
 class Platform(NamedConfigurable):
 	info_attrs = ['name', 'image', 'vendor', 'os', 'imagesets', 'requires',
@@ -781,6 +865,7 @@ class Platform(NamedConfigurable):
 		DictNodeSchema('imagesets', 'imageset', itemClass = Imageset),
 		DictNodeSchema('stages', 'stage', itemClass = BuildStage),
 		DictNodeSchema('backends', 'backend', containerClass = BackendDict),
+		DictNodeSchema('shellActions', 'shell', itemClass = ShellAction),
 	]
 
 	def __init__(self, name):
@@ -996,6 +1081,7 @@ class EmptyNodeConfig:
 		self.backends = BackendDict()
 		self.satisfiedRequirements = None
 		self._stages = {}
+		self._shellActions = {}
 
 	@property
 	def image(self):
@@ -1031,17 +1117,10 @@ class EmptyNodeConfig:
 				raise ConfigError("instance %s wants to use repository %s, but platform %s does not define it" % (
 							self.name, name, self.platform.name))
 
-			if repo not in self.repositories:
-				self.repositories.append(repo)
+			self.repositories.append(repo)
 
-		for name in role.install:
-			if name not in self.install:
-				self.install.append(name)
-
-		for name in role.start:
-			if name not in self.start:
-				self.start.append(name)
-
+		self.install += role.install
+		self.start += role.start
 		self.features += role.features
 
 	def persistInfo(self, nodePersist):
@@ -1067,7 +1146,41 @@ class EmptyNodeConfig:
 		mine.merge(stage)
 
 	def cookedStages(self):
+		self.buildGenericStage("install-packages", self.install, action = "install-package")
+		self.buildGenericStage("start-services", self.start, action = "start-service")
+		self.buildGenericStage("add-repositories",
+						filter(lambda repo: not repo.active, self.repositories),
+						actionFunc = lambda repo:
+							f"install-repository {repo.url} {repo.name}"
+					)
+
+		for stage in self.stages:
+			stage.resolveActions(self._shellActions)
+
+		if verbose_enabled():
+			verbose("Provisioning stages:")
+			for stage in self.stages:
+				verbose(f" {stage.name} reboot={stage.reboot}")
+				for invocation in stage.invocations:
+					verbose(f"    {invocation.command}")
+					if invocation.path:
+						verbose(f"      (script sourced from {invocation.path})")
+
 		return ProvisioningScriptCollection(self.stages, self.exportShellVariables())
+
+	def buildGenericStage(self, stageName, list, action = None, actionFunc = None):
+		if not list:
+			return
+
+		stage = self.createStage(stageName)
+		stage.zap()
+
+		if actionFunc is None:
+			actionFunc = lambda name: f"{action} {name}"
+
+		# weed out duplicates
+		for item in dict.fromkeys(list):
+			stage.addInvocation(actionFunc(item))
 
 	def exportShellVariables(self):
 		debug("Building shell variables for node %s" % self.name)
@@ -1078,8 +1191,6 @@ class EmptyNodeConfig:
 		result.export("TWOPENCE_OS", self.platform.os)
 		result.export("TWOPENCE_ARCH", self.platform.arch)
 		result.export("TWOPENCE_FEATURES", self.features)
-		result.export("TWOPENCE_INSTALL_PACKAGES", self.install)
-		result.export("TWOPENCE_START_SERVICES", self.start)
 
 		activate_repos = []
 		for repo in self.repositories:
@@ -1158,6 +1269,8 @@ class FinalNodeConfig(EmptyNodeConfig):
 
 			self.mergeStage(stage)
 
+		self._shellActions.update(p.shellActions)
+
 		# Loop over all specified repos. If a repo is marked with
 		# "enabled = True", we enable it right away.
 		for repo in p.repositories.values():
@@ -1168,6 +1281,10 @@ class FinalNodeConfig(EmptyNodeConfig):
 
 		self.buildResult.features += p.features
 		self.buildResult.resources += p.resources
+
+		# This is a pretty blunt axe: the platform we're building inherits
+		# all actions from the base platform and the build options.
+		self.buildResult.shellActions.update(p.shellActions)
 
 	def describeBuildResult(self):
 		base = self.platform

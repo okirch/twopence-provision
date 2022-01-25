@@ -1,0 +1,37 @@
+#
+# This script provides a wrapper around zypper addrepo
+#
+
+function zypper_install_indirect {
+
+	repoid=$1
+
+	eval url='$'"TWOPENCE_REPO_${repoid}_URL"
+	eval key='$'"TWOPENCE_REPO_${repoid}_KEY"
+
+	# The following would work, too; at least in bash
+	# url_var="TWOPENCE_REPO_${repoid}_URL"
+	# key_var="TWOPENCE_REPO_${repoid}_KEY"
+	# url=${!url_var}
+	# key=${!key_var}
+
+	case $key in
+	http:*|https:*)
+		rpm --import $key || exit 1;;
+	*)
+		echo "Error: Unable to handle repo key $key for repository $repoid" >&2
+		exit 1;;
+	esac
+
+	zypper ar $url $repoid || exit 1
+}
+
+function zypper_add_repo {
+
+	case $1 in
+        http:*|https:*)
+		zypper ar --no-gpgcheck "$@" || exit 1;;
+	*)
+		zypper_install_indirect "$@";;
+	esac
+}
