@@ -856,6 +856,7 @@ class Platform(NamedConfigurable):
 		ListAttributeSchema('features'),
 		ListAttributeSchema('resources'),
 		ListAttributeSchema('requires'),
+		ListAttributeSchema('_base_platforms', 'use-base-platforms'),
 		StringAttributeSchema('keyfile', 'ssh-keyfile'),
 		StringAttributeSchema('build_time', 'build-time'),
 		ListAttributeSchema('install'),
@@ -870,6 +871,8 @@ class Platform(NamedConfigurable):
 
 	def __init__(self, name):
 		super().__init__(name)
+
+		self.base_platforms = None
 
 		# used during build, exclusively
 		self._raw_key = None
@@ -1027,6 +1030,20 @@ class Platform(NamedConfigurable):
 		self.mergeBackendConfigs(build_config)
 		self.arch = arch
 		return True
+
+	def resolveBasePlatforms(self, config):
+		if self.base_platforms is not None:
+			return
+
+		self.base_platforms = []
+		for name in self._base_platforms:
+			base = config.getPlatform(name)
+			if base is None:
+				raise ConfigError("Cannot find base platform \"%s\" of platform \"%s\"" % (name, self.name))
+
+			self.base_platforms.append(base)
+
+		return self.base_platforms
 
 	def mergeBackendConfigs(self, backendConfigs):
 		if not backendConfigs.configs:
@@ -1256,6 +1273,10 @@ class FinalNodeConfig(EmptyNodeConfig):
 				self.buildResult.stages.add(stage)
 
 	def mergePlatformOrBuild(self, p):
+		if p.base_platforms is not None:
+			for base in p.base_platforms:
+				self.mergePlatformOrBuild(base)
+
 		self.features += p.features
 		self.resources += p.resources
 		self.install += p.install
@@ -1439,6 +1460,8 @@ class Config(Configurable):
 		if found is None:
 			if self.load("platform.d/%s.conf" % name):
 				found = self._platforms.get(name)
+		if found:
+			found.resolveBasePlatforms(self)
 		return found
 
 	@property
