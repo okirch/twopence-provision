@@ -3,9 +3,14 @@
 #
 
 function systemd_start_service {
-
 	for unit; do
-		systemctl enable "$unit"
-		systemctl start "$unit"
+		twopence_exec systemctl enable "$unit"
+		twopence_exec systemctl start "$unit"
+	done
+}
+
+function systemd_enable_service {
+	for unit; do
+		twopence_exec systemctl enable "$unit"
 	done
 }

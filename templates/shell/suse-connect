@@ -1,0 +1,20 @@
+
+function suseconnect_register {
+
+	sle_version=$1
+	shift
+
+	if [ -z "$TWOPENCE_INFO_SUSE_REGISTRATION_REGCODE" -o -z "$TWOPENCE_INFO_SUSE_REGISTRATION_EMAIL" ]; then
+		echo "Error: cannot register $TWOPENCE_OS system; lacking regcode and/or email" >&2
+		exit 1
+	fi
+
+	twopence_exec SUSEConnect -r "$TWOPENCE_INFO_SUSE_REGISTRATION_REGCODE" -e "$TWOPENCE_INFO_SUSE_REGISTRATION_EMAIL"
+}
+
+function suseconnect_activate_module {
+
+	for name; do
+		twopence_exec SUSEConnect -p $name/$TWOPENCE_ARCH
+	done
+}

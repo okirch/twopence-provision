@@ -1,0 +1,8 @@
+function twopence_trace {
+	echo "++ $@"
+}
+
+function twopence_exec {
+	twopence_trace "$@"
+	"$@"
+}

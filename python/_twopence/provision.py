@@ -62,7 +62,7 @@ class ProvisioningScriptCollection:
 	def createScript(self, name, reboot = False):
 		script = ProvisioningScriptSnippet(name, reboot, self._variables._env)
 		self.scripts.append(script)
-		script.appendCommand("set -x")
+		# script.appendCommand("set -x")
 		return script
 
 class ProvisioningShellEnvironment:

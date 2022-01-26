@@ -683,9 +683,11 @@ class BuildStage(NamedConfigurable):
 	info_attrs = ['name', 'reboot', 'run', 'only']
 
 	defaultOrder = {
-		'prep'			: 0,
-		'install'		: 1,
-		'provision'		: 2,
+		'preamble'		: 0,
+
+		'prep'			: 5,
+		'install'		: 6,
+		'provision'		: 7,
 
 		# built-in stages
 		'add-repositories'	: 10,
@@ -697,6 +699,7 @@ class BuildStage(NamedConfigurable):
 		'cleanup'		: 100,
 	}
 	defaultCategory = {
+		'preamble'		: 'prep',
 		'prep'			: 'prep',
 		'install'		: 'prep',
 		'provision'		: 'prep',
@@ -734,8 +737,13 @@ class BuildStage(NamedConfigurable):
 
 		self.invocations = []
 
+	@property
+	def is_empty(self):
+		return not(self.run or self.perform)
+
 	def zap(self):
 		self.run = []
+		self.perform = []
 		self.reboot = False
 
 	def configure(self, config):
@@ -803,7 +811,7 @@ class BuildStage(NamedConfigurable):
 		for invocation in self.invocations:
 			result += ["",
 				f"# Expanded from {invocation.name}",
-				invocation.command]
+				f"twopence_exec {invocation.command}"]
 
 		return result
 
@@ -1174,10 +1182,16 @@ class EmptyNodeConfig:
 		for stage in self.stages:
 			stage.resolveActions(self._shellActions)
 
+		stage = self.createStage('preamble')
+		if stage.is_empty:
+			stage.run.append("preamble")
+
 		if verbose_enabled():
-			verbose("Provisioning stages:")
+			verbose(f"Provisioning recipe for node {self.name}:")
 			for stage in self.stages:
-				verbose(f" {stage.name} reboot={stage.reboot}")
+				verbose(f" Stage {stage.name} reboot={stage.reboot}")
+				for name in stage.run:
+					verbose(f"    run {stage.category}/{name}")
 				for invocation in stage.invocations:
 					verbose(f"    {invocation.command}")
 					if invocation.path:

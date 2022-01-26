@@ -13,9 +13,10 @@ function suse_install_cacert {
 	fi
 
 	infra_repo_url=https://download.opensuse.org/repositories/openSUSE:/infrastructure/$ibs_build_target
-	rpm --import $infra_repo_url/repodata/repomd.xml.key
-	zypper -n addrepo $infra_repo_url infrastructure
-	zypper -n refresh
-	zypper -n install ca-certificates-suse
-	zypper mr -d infrastructure
+
+	twopence_exec rpm --import $infra_repo_url/repodata/repomd.xml.key
+	twopence_exec zypper -n addrepo $infra_repo_url infrastructure
+	twopence_exec zypper -n refresh
+	twopence_exec zypper -n install ca-certificates-suse
+	twopence_exec zypper mr -d infrastructure
 }
