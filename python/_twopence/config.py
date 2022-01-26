@@ -1090,9 +1090,29 @@ class Build(Platform):
 
 	schema = Platform.schema + [
 		StringAttributeSchema('base_platform', key = 'base-platform'),
+		ListAttributeSchema('_base_builds', 'use-base-builds'),
 		# obsolete:
 		StringAttributeSchema('template'),
 	]
+
+	def __init__(self, name):
+		super().__init__(name)
+		self.base_builds = None
+
+	def resolveBaseBuilds(self, config):
+		if self.base_builds is not None:
+			return
+
+		self.base_builds = []
+		for name in self._base_builds:
+			base = config.getBuild(name)
+			if base is None:
+				raise ConfigError("Cannot find base build \"%s\" of build \"%s\"" % (name, self.name))
+
+			self.base_builds.append(base)
+
+		return self.base_builds
+
 
 class EmptyNodeConfig:
 	def __init__(self, name):
@@ -1295,6 +1315,9 @@ class FinalNodeConfig(EmptyNodeConfig):
 	def mergePlatformOrBuild(self, p):
 		if p.base_platforms is not None:
 			for base in p.base_platforms:
+				self.mergePlatformOrBuild(base)
+		if isinstance(p, Build) and p.base_builds is not None:
+			for base in p.base_builds:
 				self.mergePlatformOrBuild(base)
 
 		self.features += p.features
@@ -1503,7 +1526,13 @@ class Config(Configurable):
 		return self._builds.values()
 
 	def getBuild(self, name):
-		return self._builds.get(name)
+		found = self._builds.get(name)
+		if found is None:
+			if self.load("build.d/%s.conf" % name):
+				found = self._builds.get(name)
+		if found:
+			found.resolveBaseBuilds(self)
+		return found
 
 	@property
 	def parameters(self):
