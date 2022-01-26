@@ -2,12 +2,46 @@
 # This script provides a wrapper around zypper addrepo
 #
 
+vendorsfile=/etc/zypp/vendors.d/00-openSUSE.conf
+
+function __zypper_init_vendors {
+	cat >$vendorsfile <<-EOF
+	[main]
+	vendors=openSUSE,SUSE,SUSE LLC <https://www.suse.com/>
+EOF
+	twopence_trace "Created $vendorsfile"
+	cat $vendorsfile
+	echo "--"
+}
+
+function __zypper_allow_vendor {
+
+	test -f $vendorsfile || __zypper_init_vendors
+	for vendor; do
+		twopence_exec \
+		sed -i -e "s|vendors=.*|&,$vendor|" $vendorsfile || exit 1
+	done
+}
+
+function __zypper_import_key {
+
+	twopence_exec \
+	rpm --import "$@" || exit 1
+}
+
+function __zypper_add_repo {
+
+	twopence_exec \
+	zypper ar "$@" || exit 1
+}
+
 function zypper_install_indirect {
 
 	repoid=$1
 
 	eval url='$'"TWOPENCE_REPO_${repoid}_URL"
 	eval key='$'"TWOPENCE_REPO_${repoid}_KEY"
+	eval vendor='$'"TWOPENCE_REPO_${repoid}_ZYPP_VENDOR"
 
 	# The following would work, too; at least in bash
 	# url_var="TWOPENCE_REPO_${repoid}_URL"
@@ -17,20 +51,42 @@ function zypper_install_indirect {
 
 	case $key in
 	http:*|https:*)
-		rpm --import $key || exit 1;;
+		__zypper_import_key $key;;
 	*)
 		echo "Error: Unable to handle repo key $key for repository $repoid" >&2
 		exit 1;;
 	esac
 
-	zypper ar $url $repoid || exit 1
+	__zypper_add_repo $url $repoid
+	__zypper_allow_vendor $vendor
+}
+
+function zypper_install_url {
+
+	__parsed=$(getopt -o '' --longoptions key:,vendor: -- "$@")
+	eval set -- "$__parsed"
+	while [ "$#" -ne 0 ]; do
+		opt=$1; shift
+		test "$opt" = "--" && break
+
+		arg=$1; shift
+		test -z "$arg" -o "$arg" = None && continue
+
+		case $opt in
+		--key)
+			__zypper_import_key $arg;;
+		--vendor)
+			__zypper_allow_vendor "$arg";;
+		esac
+	done
+	__zypper_add_repo --no-gpgcheck "$@"
 }
 
 function zypper_add_repo {
 
 	case $1 in
         http:*|https:*)
-		zypper ar --no-gpgcheck "$@" || exit 1;;
+		zypper_install_url "$@";;
 	*)
 		zypper_install_indirect "$@";;
 	esac

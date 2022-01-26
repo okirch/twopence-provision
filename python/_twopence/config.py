@@ -626,6 +626,8 @@ class Repository(NamedConfigurable):
 		StringAttributeSchema('keyfile'),
 		BooleanAttributeSchema('enabled'),
 		BooleanAttributeSchema('active'),
+
+		StringAttributeSchema('x_zypp_vendor', key = 'x-zypp-vendor'),
 	]
 
 class Imageset(NamedConfigurable):
@@ -1176,7 +1178,8 @@ class EmptyNodeConfig:
 		self.buildGenericStage("add-repositories",
 						filter(lambda repo: not repo.active, self.repositories),
 						actionFunc = lambda repo:
-							f"install-repository {repo.url} {repo.name}"
+							f"install-repository {repo.url} {repo.name} --key='{repo.keyfile}' --vendor='{repo.x_zypp_vendor}'"
+							# this is getting ugly
 					)
 
 		for stage in self.stages:
@@ -1240,6 +1243,9 @@ class EmptyNodeConfig:
 				warning("Repository %s specifies keyfile %s - this will most likely fail" % (repo.name, keyfile))
 			else:
 				result.export("TWOPENCE_REPO_%s_KEY" % name, keyfile)
+
+			if repo.x_zypp_vendor:
+				result.export("TWOPENCE_REPO_%s_ZYPP_VENDOR" % name, repo.x_zypp_vendor)
 
 			activate_repos.append(name)
 
