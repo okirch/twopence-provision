@@ -763,7 +763,7 @@ class BuildStage(NamedConfigurable):
 				self.addInvocation(cmd)
 
 	def addInvocation(self, cmd):
-		debug(f"Action {self.name}: add invocation {cmd}")
+		# debug(f"Action {self.name}: add invocation {cmd}")
 		invocation = BuildInvocation(cmd)
 		self.invocations.append(invocation)
 
@@ -1328,7 +1328,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 
 		for stage in p.stages.values():
 			if stage.only == 'build' and self.name != 'build':
-				print("Skipping stage %s (marked as %s only)" % (stage.name, stage.only))
+				debug("Skipping stage %s from %s (marked as %s only)" % (stage.name, p, stage.only))
 				continue
 
 			self.mergeStage(stage)
