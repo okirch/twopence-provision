@@ -134,7 +134,7 @@ class Provisioner:
 							value = ""
 						else:
 							for l in value[:-1]:
-								outf.write(output + l + "\n")
+								outf.write(output + l + line[i+1:])
 							value = value[-1]
 
 					output += value
