@@ -437,6 +437,27 @@ class ConfigDict(dict):
 			item.publish(child)
 
 #
+# This represents a config node containing a set of key/value
+# pairs, without any particular semantics.
+# This is mostly useful when we're dealing with data that we do not
+# use ourselves directly, but pass it on (eg to a backend).
+#
+class ConfigOpaque(NamedConfigurable):
+	info_attrs = ['name']
+
+	def __init__(self, name, data = None):
+		super().__init__(name)
+		self.data = data or {}
+
+	def configure(self, config):
+		for name in config.get_attributes():
+			self.data[name] = config.get_value(name)
+
+	def publish(self, curlyNode):
+		for key, value in self.data.items():
+			curlyNode.set_value(key, value)
+
+#
 # A platform definition can describe requirements (such as an activation regcode).
 # We want to be able to
 #  (a) store these in a curly config file somewhere below ~/.twopence
@@ -483,21 +504,6 @@ class ConfigRequirement(NamedConfigurable):
 			StringAttributeSchema('default'),
 		]
 
-	class Fnord(NamedConfigurable):
-		info_attrs = ['name']
-
-		def __init__(self, name, data = None):
-			super().__init__(name)
-			self.data = data or {}
-
-		def configure(self, config):
-			for name in config.get_attributes():
-				self.data[name] = config.get_value(name)
-
-		def publish(self, curlyNode):
-			for key, value in self.data.items():
-				curlyNode.set_value(key, value)
-
 	schema = [
 		StringAttributeSchema('provides'),
 		ListAttributeSchema('valid'),
@@ -542,13 +548,13 @@ class ConfigRequirement(NamedConfigurable):
 			warning(f"Ignoring {path}...")
 			return None
 
-		response = self.Fnord(self.provides)
+		response = ConfigOpaque(self.provides)
 		response.configure(child)
 
 		return response
 
 	def buildResponse(self, nodeName, data):
-		response = self.Fnord(self.provides, data)
+		response = ConfigOpaque(self.provides, data)
 
 		if "allnodes" in self.valid:
 			self._cache = response
