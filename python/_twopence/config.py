@@ -254,13 +254,13 @@ class DictNodeSchema(NodeSchema):
 			if not itemClass:
 				raise ValueError("DictNodeSchema must specifiy either container or item class")
 
-			containerClass = lambda: ConfigDict(key or name, itemClass)
+			containerClass = lambda: ConfigDict(itemClass)
 
 		super().__init__(name, key, containerClass)
 
 class ListNodeSchema(NodeSchema):
 	def __init__(self, name, key = None, itemClass = None):
-		containerClass = lambda: ConfigList(key or name, itemClass)
+		containerClass = lambda: ConfigList(itemClass)
 		super().__init__(name, key, containerClass)
 
 	def create(self, name):
@@ -387,8 +387,7 @@ class NamedConfigurable(Configurable):
 		self.name = name
 
 class ConfigList(list):
-	def __init__(self, type_name, item_class, verbose = False):
-		self.type_name = type_name
+	def __init__(self, item_class, verbose = False):
 		self.item_class = item_class
 		self.verbose = verbose
 
@@ -401,8 +400,7 @@ class ConfigList(list):
 		return item
 
 class ConfigDict(dict):
-	def __init__(self, type_name, item_class, verbose = False):
-		self.type_name = type_name
+	def __init__(self, item_class, verbose = False):
 		self.item_class = item_class
 		self.verbose = verbose
 
@@ -601,7 +599,7 @@ class SavedBackendConfig(ConfigOpaque):
 
 class BackendDict(ConfigDict):
 	def __init__(self):
-		super().__init__("backend", SavedBackendConfig)
+		super().__init__(SavedBackendConfig)
 
 	def savedConfigs(self, backendName):
 		bleach
