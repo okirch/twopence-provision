@@ -246,7 +246,7 @@ class VagrantInstance(GenericInstance):
 		self.raw_state = raw_status
 
 class VagrantNodeConfig(Configurable):
-	info_attrs = ['template', 'image', 'url']
+	info_attrs = ['template', 'image', 'url', 'timeout']
 
 	schema = [
 		Schema.StringAttribute('template'),
@@ -276,18 +276,14 @@ class VagrantBackend(Backend):
 		# the vagrant box listing
 		self.listing = None
 
-	def configureNode(self, node, config):
+	def attachNode(self, node):
+		try:
+			return node.vagrant
+		except:
+			pass
+
 		node.vagrant = VagrantNodeConfig()
-
-		# in case someone configured a global template
-		node.template = self.template
-
-		for config in node.platform.backends.savedConfigs("vagrant"):
-			node.vagrant.configure(config)
-		for config in node.backends.savedConfigs("vagrant"):
-			node.vagrant.configure(config)
-
-		debug("Vagrant configureNode(%s) = %s" % (node.name, node.vagrant))
+		return node.vagrant
 
 	def detect(self, workspace, status, expectedInstanceConfigs):
 		assert(workspace)

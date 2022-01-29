@@ -450,12 +450,35 @@ class ConfigOpaque(NamedConfigurable):
 		self.data = data or {}
 
 	def configure(self, config):
-		for name in config.get_attributes():
-			self.data[name] = config.get_value(name)
+		for attr in config.attributes:
+			Schema.debug("   %s = %s" % (attr.name, attr.value))
+			self.data[attr.name] = attr.value
 
 	def publish(self, curlyNode):
 		for key, value in self.data.items():
 			curlyNode.set_value(key, value)
+
+	def items(self):
+		return self.data.items()
+
+	# methods that implement part of curly.Node so that
+	# we can be passed to Configurable.configure
+	class FakeAttr:
+		def __init__(self, key, value):
+			self.name = key
+			self.value = value
+			self.values = [value]
+
+	@property
+	def attributes(self):
+		for key, value in self.data.items():
+			yield self.FakeAttr(key, value)
+
+	def get_value(self, key):
+		return self.data.get(key)
+
+	def __iter__(self):
+		return iter([])
 
 #
 # A platform definition can describe requirements (such as an activation regcode).
@@ -581,21 +604,21 @@ class ConfigRequirement(NamedConfigurable):
 
 		cfg.save(path)
 
-class SavedBackendConfig:
-	def __init__(self, name, config = None):
-		self.name = name
-		self.configs = []
-		if config:
-			self.configs.append(config)
+class SavedBackendConfig(ConfigOpaque):
+	def mergeNoOverride(self, other):
+		result = copy.copy(other.data)
+		result.update(self.data)
+		self.data = result
 
-	def configure(self, config):
-		self.configs.append(config)
+	def merge(self, other):
+		self.data.update(other)
 
 class BackendDict(ConfigDict):
 	def __init__(self):
 		super().__init__("backend", SavedBackendConfig)
 
 	def savedConfigs(self, backendName):
+		bleach
 		saved = self.get(backendName)
 		if saved and saved.configs:
 			return saved.configs
@@ -608,21 +631,14 @@ class BackendDict(ConfigDict):
 
 	def mergeSavedConfig(self, other):
 		assert(isinstance(other, SavedBackendConfig))
-		if not other.configs:
-			return
-
-		saved = self.create(other.name)
-		saved.configs = other.configs + saved.configs
+		if other.data:
+			saved = self.create(other.name)
+			saved.mergeNoOverride(other)
 
 	def publish(self, config):
 		for saved in self.values():
 			grand_child = config.add_child("backend", saved.name)
-			for config in saved.configs:
-				for attr_name in config.get_attributes():
-					values = config.get_values(attr_name)
-					if not values:
-						values = [""]
-					grand_child.set_value(attr_name, values)
+			saved.publish(grand_child)
 
 class Repository(NamedConfigurable):
 	info_attrs = ['name', 'url']
@@ -902,14 +918,7 @@ class Platform(NamedConfigurable):
 	##########################################################
 	def addBackend(self, name, **kwargs):
 		saved = self.backends.create(name)
-		if saved.configs:
-			config = saved.configs[0]
-		else:
-			config = curly.Config().tree()
-			saved.configs.append(config)
-
-		for key, value in kwargs.items():
-			config.set_value(key, value)
+		saved.data.update(kwargs)
 
 	def finalize(self):
 		if not self.keyfile and self._raw_key:
@@ -1010,9 +1019,9 @@ class Platform(NamedConfigurable):
 	def resolveImage(self, config, backend, base_os = None, arch = None):
 		assert(type(backend) == str)
 
-		for saved in self.backends.savedConfigs(backend):
-			if saved.get_value("image") is not None:
-				return True
+		backendConfig = self.backends.get(backend)
+		if backendConfig and backendConfig.get_value("image") is not None:
+			return True
 
 		if not self.imagesets:
 			return False
@@ -1043,7 +1052,8 @@ class Platform(NamedConfigurable):
 			verbose("No matching image in platform %s" % self)
 			return False
 
-		self.mergeBackendConfigs(build_config)
+		self.backends.mergeSavedConfig(build_config)
+
 		self.arch = arch
 		return True
 
@@ -1060,13 +1070,6 @@ class Platform(NamedConfigurable):
 			self.base_platforms.append(base)
 
 		return self.base_platforms
-
-	def mergeBackendConfigs(self, backendConfigs):
-		if not backendConfigs.configs:
-			return
-
-		saved = self.backends.create(backendConfigs.name)
-		saved.configs = backendConfigs.configs + saved.configs
 
 class Role(NamedConfigurable):
 	info_attrs = ["name", "platform", "repositories", "features",]
@@ -1182,6 +1185,14 @@ class EmptyNodeConfig:
 		if self.platform:
 			nodePersist.vendor = self.platform.vendor
 			nodePersist.os = self.platform.os
+
+	def configureBackend(self, backendName, backendNode):
+		config = self.platform.backends.get(backendName)
+		if config is not None:
+			backendNode.configure(config)
+		config = self.backends.get(backendName)
+		if config is not None:
+			backendNode.configure(config)
 
 	@property
 	def stages(self):
@@ -1338,6 +1349,8 @@ class FinalNodeConfig(EmptyNodeConfig):
 				continue
 
 			self.mergeStage(stage)
+
+		self.backends.merge(p.backends)
 
 		self._shellActions.update(p.shellActions)
 
@@ -1566,8 +1579,12 @@ class Config(Configurable):
 		self._requirementsManager = value
 
 	def configureBackend(self, backend):
-		for config in self._backends.savedConfigs(backend.name):
-			backend.configure(config)
+		backendConfig = self._backends.get(backend.name)
+		if backendConfig is not None:
+			# backendConfig is a ConfigOpaque instance, while Configurable.configue
+			# expects a curly.Config object. However, ConfigOpaque implements
+			# enough of the curly behavior to make this call work.
+			backend.configure(backendConfig)
 
 	def findBuildNode(self):
 		result = None
@@ -1616,8 +1633,10 @@ class Config(Configurable):
 		if role:
 			result.fromRole(role)
 
-		# Extract backend specific config data from node, role and platform
-		backend.configureNode(result, self)
+		# Extract and apply backend specific configuration from platform and node
+		backendNode = backend.attachNode(result)
+		result.configureBackend(backend.name, backendNode)
+		debug(f"Backend {backend.name} configured {node.name} as {backendNode}")
 
 		return result
 
