@@ -244,7 +244,9 @@ class NodeSchema(Schema):
 		self.debug("Publishing %s object's %s" % (obj.__class__.__name__, self.name))
 
 		container = self.getContainerFor(obj)
-		container.publish(node)
+		for item in container.values():
+			child = node.add_child(self.key, item.name)
+			item.publish(child)
 
 class DictNodeSchema(NodeSchema):
 	def __init__(self, name, key = None, containerClass = None, itemClass = None):
@@ -419,22 +421,6 @@ class ConfigDict(dict):
 		if obj.name in self:
 			raise KeyError("Detected duplicate object name %s" % obj.name)
 		self[obj.name] = obj
-
-	def configure(self, config):
-		result = []
-		for name in config.get_children(self.type_name):
-			item = self.create(name)
-			item.configure(config.get_child(self.type_name, name))
-			result.append(item)
-
-			if self.verbose:
-				debug("Defined %s" % item)
-		return result
-
-	def publish(self, config):
-		for item in self.values():
-			child = config.add_child(self.type_name, item.name)
-			item.publish(child)
 
 #
 # This represents a config node containing a set of key/value
@@ -634,11 +620,6 @@ class BackendDict(ConfigDict):
 		if other.data:
 			saved = self.create(other.name)
 			saved.mergeNoOverride(other)
-
-	def publish(self, config):
-		for saved in self.values():
-			grand_child = config.add_child("backend", saved.name)
-			saved.publish(grand_child)
 
 class Repository(NamedConfigurable):
 	info_attrs = ['name', 'url']
