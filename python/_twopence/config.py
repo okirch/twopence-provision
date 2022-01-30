@@ -365,6 +365,12 @@ class Configurable(object):
 			info.publish(self, config)
 		return
 
+	def merge(self, other):
+		raise NotImplementedError()
+
+	def mergeNoOverride(self, other):
+		raise NotImplementedError()
+
 	def __str__(self):
 		info = []
 		for attr_name in self.info_attrs:
@@ -420,6 +426,16 @@ class ConfigDict(dict):
 			raise KeyError("Detected duplicate object name %s" % obj.name)
 		self[obj.name] = obj
 
+	def merge(self, other):
+		assert(isinstance(other, ConfigDict))
+		for item in other.values():
+			self.mergeItem(item)
+
+	def mergeItem(self, other):
+		assert(isinstance(other, self.item_class))
+		item = self.create(other.name)
+		item.mergeNoOverride(other)
+
 #
 # This represents a config node containing a set of key/value
 # pairs, without any particular semantics.
@@ -444,6 +460,16 @@ class ConfigOpaque(NamedConfigurable):
 
 	def items(self):
 		return self.data.items()
+
+	# merge methods
+	def mergeNoOverride(self, other):
+		result = copy.copy(other.data)
+		result.update(self.data)
+		self.data = result
+
+	def merge(self, other):
+		self.data.update(other)
+
 
 	# methods that implement part of curly.Node so that
 	# we can be passed to Configurable.configure
@@ -589,13 +615,7 @@ class ConfigRequirement(NamedConfigurable):
 		cfg.save(path)
 
 class SavedBackendConfig(ConfigOpaque):
-	def mergeNoOverride(self, other):
-		result = copy.copy(other.data)
-		result.update(self.data)
-		self.data = result
-
-	def merge(self, other):
-		self.data.update(other)
+	pass
 
 class BackendDict(ConfigDict):
 	def __init__(self):
@@ -607,17 +627,6 @@ class BackendDict(ConfigDict):
 		if saved and saved.configs:
 			return saved.configs
 		return []
-
-	def merge(self, other):
-		assert(isinstance(other, BackendDict))
-		for be in other.values():
-			self.mergeSavedConfig(be)
-
-	def mergeSavedConfig(self, other):
-		assert(isinstance(other, SavedBackendConfig))
-		if other.data:
-			saved = self.create(other.name)
-			saved.mergeNoOverride(other)
 
 class Repository(NamedConfigurable):
 	info_attrs = ['name', 'url']
@@ -1031,7 +1040,7 @@ class Platform(NamedConfigurable):
 			verbose("No matching image in platform %s" % self)
 			return False
 
-		self.backends.mergeSavedConfig(build_config)
+		self.backends.mergeItem(build_config)
 
 		self.arch = arch
 		return True
