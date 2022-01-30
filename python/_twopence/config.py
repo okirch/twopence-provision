@@ -614,20 +614,6 @@ class ConfigRequirement(NamedConfigurable):
 
 		cfg.save(path)
 
-class SavedBackendConfig(ConfigOpaque):
-	pass
-
-class BackendDict(ConfigDict):
-	def __init__(self):
-		super().__init__(SavedBackendConfig)
-
-	def savedConfigs(self, backendName):
-		bleach
-		saved = self.get(backendName)
-		if saved and saved.configs:
-			return saved.configs
-		return []
-
 class Repository(NamedConfigurable):
 	info_attrs = ['name', 'url']
 
@@ -645,7 +631,7 @@ class Imageset(NamedConfigurable):
 
 	class Architecture(NamedConfigurable):
 		schema = [
-			DictNodeSchema('backends', 'backend', containerClass = BackendDict),
+			DictNodeSchema('backends', 'backend', itemClass = ConfigOpaque),
 		]
 
 		def __str__(self):
@@ -885,7 +871,7 @@ class Platform(NamedConfigurable):
 		DictNodeSchema('repositories', 'repository', itemClass = Repository),
 		DictNodeSchema('imagesets', 'imageset', itemClass = Imageset),
 		DictNodeSchema('stages', 'stage', itemClass = BuildStage),
-		DictNodeSchema('backends', 'backend', containerClass = BackendDict),
+		DictNodeSchema('backends', 'backend', itemClass = ConfigOpaque),
 		DictNodeSchema('shellActions', 'shell', itemClass = ShellAction),
 	]
 
@@ -1079,7 +1065,7 @@ class Node(NamedConfigurable):
 		ListAttributeSchema('build'),
 		ListAttributeSchema('install'),
 		ListAttributeSchema('start'),
-		DictNodeSchema("_backends", "backend", BackendDict),
+		DictNodeSchema("_backends", "backend", itemClass = ConfigOpaque),
 	]
 
 class Build(Platform):
@@ -1122,7 +1108,7 @@ class EmptyNodeConfig:
 		self.requires = []
 		self.features = []
 		self.resources = []
-		self.backends = BackendDict()
+		self.backends = ConfigDict(ConfigOpaque)
 		self.satisfiedRequirements = None
 		self._stages = {}
 		self._shellActions = {}
@@ -1405,7 +1391,7 @@ class Config(Configurable):
 		StringAttributeSchema('workspaceRoot', 'workspace-root'),
 		StringAttributeSchema('workspace'),
 		StringAttributeSchema('testcase'),
-		DictNodeSchema('_backends', 'backend', containerClass = BackendDict),
+		DictNodeSchema('_backends', 'backend', itemClass = ConfigOpaque),
 		DictNodeSchema('_platforms', 'platform', itemClass = Platform),
 		DictNodeSchema('_roles', 'role', itemClass = Role),
 		DictNodeSchema('_nodes', 'node', itemClass = Node),
