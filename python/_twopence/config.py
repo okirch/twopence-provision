@@ -16,7 +16,7 @@ import copy
 from .instance import *
 from .logging import *
 from .paths import *
-from .provision import ProvisioningScriptCollection, ProvisioningShellEnvironment
+from .provision import ProvisioningScriptCollection, ProvisioningShellEnvironment, ProvisioningFile
 
 class ConfigError(Exception):
 	pass
@@ -677,6 +677,18 @@ class BuildInvocation:
 		else:
 			raise ConfigError(f"Action {self.name} does not specify command or function")
 
+	def files(self):
+		if self.path is None:
+			return []
+
+		debug(f"path for {self} is {self.path}")
+		return [ProvisioningFile(self.path)]
+
+	def commands(self):
+		return ["",
+			f"# Expanded from {self.name}",
+			f"twopence_exec {self.command}"]
+
 class BuildStage(NamedConfigurable):
 	info_attrs = ['name', 'reboot', 'run', 'only']
 
@@ -749,9 +761,9 @@ class BuildStage(NamedConfigurable):
 		self.validate()
 
 	def validate(self):
-		for path in self.paths():
-			if not os.path.isfile(path):
-				raise ConfigError("Script snippet \"%s\" does not exist" % path)
+		for file in self.files():
+			if not os.path.isfile(file.path):
+				raise ConfigError("Script snippet \"%s\" does not exist" % file.path)
 
 		self.invocations = []
 		for cmd in self.perform:
@@ -789,45 +801,20 @@ class BuildStage(NamedConfigurable):
 			self.invocations = self.invocations + other.invocations
 		self.reboot = self.reboot or other.reboot
 
-	def load(self, alreadyLoaded = None):
+	def files(self):
 		result = []
-		for path in self.paths():
-			if path in alreadyLoaded:
-				continue
-
-			debug("Trying to load script snippet from %s" % path)
-
-			result += ["", "# BEGIN %s" % path]
-			with open(path, "r") as f:
-				result += f.read().split('\n')
-				result.append("# END OF %s" % path)
-
-			alreadyLoaded.add(path)
-
-		result += self.commands
+		for name in self.run:
+			result.append(ProvisioningFile(self.category, name))
 
 		for invocation in self.invocations:
-			result += ["",
-				f"# Expanded from {invocation.name}",
-				f"twopence_exec {invocation.command}"]
+			result += invocation.files()
 
 		return result
 
-	def paths(self):
-		result = []
-
-		stagedir = os.path.join("/usr/lib/twopence/provision", self.category)
-		for name in self.run:
-			path = os.path.join(stagedir, name)
-			result.append(path)
-
-		stagedir = "/usr/lib/twopence/provision"
+	def shellCommands(self):
+		result = [] + self.commands
 		for invocation in self.invocations:
-			if invocation.path is not None:
-				debug(f"path for {invocation} is {invocation.path}")
-				path = os.path.join(stagedir, invocation.path)
-				result.append(path)
-
+			result += invocation.commands()
 		return result
 
 class Action(NamedConfigurable):
@@ -848,6 +835,20 @@ class ShellAction(Action):
 	@property
 	def path(self):
 		return f"shell/{self.script}"
+
+	def files(self):
+		if self.path is None:
+			return []
+
+		debug(f"path for {self} is {self.script}")
+		return [ProvisioningFile("shell", self.script)]
+
+
+	@staticmethod
+	def defaultPreamble():
+		action = ShellAction("preamble")
+		action.script = "preamble"
+		return action
 
 class Platform(NamedConfigurable):
 	info_attrs = ['name', 'image', 'vendor', 'os', 'imagesets', 'requires',
@@ -1196,9 +1197,12 @@ class EmptyNodeConfig:
 		for stage in self.stages:
 			stage.resolveActions(self._shellActions)
 
-		stage = self.createStage('preamble')
-		if stage.is_empty:
-			stage.run.append("preamble")
+		preambleAction = self._shellActions.get("preamble")
+		if preambleAction is None:
+			preambleAction = ShellAction.defaultPreamble()
+		preamble = []
+		for file in preambleAction.files():
+			preamble += file.load()
 
 		if verbose_enabled():
 			verbose(f"Provisioning recipe for node {self.name}:")
@@ -1211,7 +1215,7 @@ class EmptyNodeConfig:
 					if invocation.path:
 						verbose(f"      (script sourced from {invocation.path})")
 
-		return ProvisioningScriptCollection(self.stages, self.exportShellVariables())
+		return ProvisioningScriptCollection(self.stages, self.exportShellVariables(), preamble = preamble)
 
 	def buildGenericStage(self, stageName, list, action = None, actionFunc = None):
 		if not list:

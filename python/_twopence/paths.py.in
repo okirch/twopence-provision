@@ -1,3 +1,4 @@
 twopence_global_config_dir	= "@TWOPENCE_ETCDIR@"
 twopence_user_config_dir	= "~/.twopence/config"
 twopence_user_data_dir		= "~/.twopence/data"
+twopence_provision_script_dir	= "@LIBDIR@/twopence/provision"

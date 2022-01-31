@@ -10,7 +10,25 @@
 ##################################################################
 
 import os
+from .paths import *
 from .logging import *
+
+class ProvisioningFile:
+	def __init__(self, *names):
+		self.name = os.path.join(*names)
+		self.path = os.path.join(twopence_provision_script_dir, *names)
+
+	def load(self):
+		path = self.path
+
+		debug(f"Trying to load script snippet from {path}")
+
+		result = ["", f"# BEGIN {path}"]
+		with open(path, "r") as f:
+			result += f.read().split('\n')
+		result.append(f"# END OF {path}")
+
+		return result
 
 class ProvisioningScriptSnippet:
 	def __init__(self, name, reboot, lines = []):
@@ -26,7 +44,12 @@ class ProvisioningScriptSnippet:
 		self.script.append(cmd)
 
 	def merge(self, stage):
-		self.script += stage.load(self.functionsLoaded)
+		for file in stage.files():
+			if file.path not in self.functionsLoaded:
+				self.script += file.load()
+				self.functionsLoaded.add(file.path)
+
+		self.script += stage.shellCommands()
 
 	def format(self, indent = ""):
 		result = ""
@@ -41,17 +64,18 @@ class ProvisioningScriptSnippet:
 		return not(self.script)
 
 class ProvisioningScriptCollection:
-	def __init__(self, stages, env):
+	def __init__(self, stages, env, preamble = None):
 		assert(isinstance(env, ProvisioningShellEnvironment))
 		self.scripts = []
 		self._variables = env
+		self._preamble = preamble
 
 		script = self.createScript("default")
 
 		for stage in stages:
 			# print("build script for %s" % stage)
 			if stage.reboot:
-				script = self.createScript(stage.name, stage.reboot)
+				script = self.createScript(stage.name, reboot = stage.reboot)
 
 			debug("Processing stage %s -> %s" % (stage.name, script.name))
 			script.merge(stage)
@@ -60,7 +84,7 @@ class ProvisioningScriptCollection:
 		return iter(self.scripts)
 
 	def createScript(self, name, reboot = False):
-		script = ProvisioningScriptSnippet(name, reboot, self._variables._env)
+		script = ProvisioningScriptSnippet(name, reboot, self._variables._env + self._preamble)
 		self.scripts.append(script)
 		# script.appendCommand("set -x")
 		return script
