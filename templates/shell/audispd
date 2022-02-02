@@ -3,9 +3,25 @@
 # string messages.
 #
 
+audit_plugin_dir=
+
+function audit_find_plugin_dir {
+
+	for dir in /etc/audisp/plugins.d /etc/audit/plugins.d; do
+		if test -d $dir; then
+			echo $dir
+			return
+		fi
+	done
+
+	echo "Cannot find audispd plugin directory" >&2
+	exit 1
+}
 audit_plugin_dir="/etc/audisp/plugins.d/"
 
 function audit_enable_unix_socket {
+
+	audit_plugin_dir=$(audit_find_plugin_dir)
 
 	file="$audit_plugin_dir/af_unix.conf"
 

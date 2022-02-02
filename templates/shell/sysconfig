@@ -1,0 +1,20 @@
+#
+# Change sysconfig variables
+#
+
+function sysconfig_change_value {
+
+	filename=$1
+	newvalue=$2
+
+	variable=${newvalue%=*}
+
+	sed -i -e "/^${variable}=/s|.*|$newvalue|" $filename
+	if ! grep -qs "^${variable}=" $filename; then
+		echo
+		echo "$newvalue"
+	fi >>$filename
+
+	echo "Changed $filename"
+	cat $filename
+}

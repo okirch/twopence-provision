@@ -1,0 +1,81 @@
+#
+# shell functions for dnf based systems
+#
+
+function __dnf_add_repo {
+
+	twopence_exec \
+	dnf config-manager --add-repo "$@"
+}
+
+function __dnf_import_key {
+
+	twopence_exec \
+	rpm --import "$@" || exit 1
+}
+
+function __dns_allow_vendor {
+
+	:
+}
+
+function dnf_install_indirect {
+
+	repoid=$1
+
+	eval url='$'"TWOPENCE_REPO_${repoid}_URL"
+	eval key='$'"TWOPENCE_REPO_${repoid}_KEY"
+	eval vendor='$'"TWOPENCE_REPO_${repoid}_ZYPP_VENDOR"
+
+	# The following would work, too; at least in bash
+	# url_var="TWOPENCE_REPO_${repoid}_URL"
+	# key_var="TWOPENCE_REPO_${repoid}_KEY"
+	# url=${!url_var}
+	# key=${!key_var}
+
+	case $key in
+	http:*|https:*)
+		__dnf_import_key $key;;
+	*)
+		echo "Error: Unable to handle repo key $key for repository $repoid" >&2
+		exit 1;;
+	esac
+
+	twopence_exec \
+	dnf config-manager --add-repo "$url"
+
+	__dnf_allow_vendor $vendor
+}
+
+function dnf_install_url {
+
+	__parsed=$(getopt -o '' --longoptions key:,vendor: -- "$@")
+	eval set -- "$__parsed"
+	while [ "$#" -ne 0 ]; do
+		opt=$1; shift
+		test "$opt" = "--" && break
+
+		arg=$1; shift
+		test -z "$arg" -o "$arg" = None && continue
+
+		case $opt in
+		--key)
+			__dnf_import_key $arg;;
+		--vendor)
+			__dnf_allow_vendor "$arg";;
+		esac
+	done
+
+	twopence_exec \
+	dnf config-manager --nogpgcheck --add-repo "$1"
+}
+
+function dnf_add_repo {
+
+	case $1 in
+        http:*|https:*)
+		dnf_install_url "$@";;
+	*)
+		dnf_install_indirect "$@";;
+	esac
+}

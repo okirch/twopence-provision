@@ -1,0 +1,5 @@
+
+function update_kernel_commandline {
+	echo "Updating kernel command line"
+	grubby --update-kernel=ALL --args="$*"
+}
