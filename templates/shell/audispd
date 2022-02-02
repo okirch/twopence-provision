@@ -1,0 +1,19 @@
+#
+# Enable audispd's af_unix plugin and configure it to send binary rather than
+# string messages.
+#
+
+audit_plugin_dir="/etc/audisp/plugins.d/"
+
+function audit_enable_unix_socket {
+
+	file="$audit_plugin_dir/af_unix.conf"
+
+	sed -i -e 's:^active.*:active = yes:' \
+		-e 's:^format.*:format = binary:' \
+		$file
+
+	echo "-- contents of $file --"
+	cat $file
+	echo "-- EOF --"
+}
