@@ -9,9 +9,10 @@
 
 import sys
 import os
+import twopence
+
 from twopence.provision import *
 from twopence.provision.topology import TopologyStatus
-from twopence.provision.paths import *
 
 global_config_files	= [
 	"twopence.conf",
@@ -29,7 +30,7 @@ class BasicAction(object):
 			config = Config(None)
 			for path in global_config_files:
 				config.load(path)
-			config.addDirectory(twopence_user_config_dir)
+			config.addDirectory(twopence.user_config_dir)
 			self._config = config
 
 		return self._config
@@ -92,7 +93,7 @@ class Action(BasicAction):
 
 		# Note: we load global config files first; THEN
 		# we add user directories to the config search path.
-		config.addDirectory(twopence_user_config_dir)
+		config.addDirectory(twopence.user_config_dir)
 
 		for path in bom.config:
 			config.load(path)
@@ -474,7 +475,7 @@ class ActionPlatform(BasicAction):
 				path = config.locateConfig("%s.conf" % name)
 				if path is None:
 					print("  %s: not provided by any config file; please create %s/%s.conf" % (
-							name, twopence_user_data_dir, name))
+							name, twopence.user_data_dir, name))
 				else:
 					print("  %s: provided by %s" % (name, path))
 
@@ -488,7 +489,7 @@ class ActionPlatform(BasicAction):
 					path = config.locateConfig("%s.conf" % name)
 					if path is None:
 						status = "not provided by any config file; please create %s/%s.conf" % (
-								twopence_user_data_dir, name)
+								twopence.user_data_dir, name)
 					else:
 						status = "provided by %s" % (path)
 					self._requirements[name] = status

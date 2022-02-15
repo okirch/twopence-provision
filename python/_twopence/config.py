@@ -12,10 +12,10 @@ import os
 import time
 import shutil
 import copy
+import twopence
 
 from .instance import *
 from .logging import *
-from .paths import *
 from .provision import ProvisioningScriptCollection, ProvisioningShellEnvironment, ProvisioningFile
 
 class ConfigError(Exception):
@@ -602,7 +602,7 @@ class ConfigRequirement(NamedConfigurable):
 		if "permanent" not in self.valid:
 			return
 
-		path = os.path.expanduser(twopence_user_config_dir)
+		path = os.path.expanduser(twopence.user_config_dir)
 		path = os.path.join(path, f"{self.name}.conf")
 
 		debug(f"Saving requirement {self.name} to {path}")
@@ -914,7 +914,7 @@ class Platform(NamedConfigurable):
 		verbose("Saved platform config to %s" % path)
 
 	def getOutputDir(self, name):
-		path = os.path.expanduser(twopence_user_data_dir)
+		path = os.path.expanduser(twopence.user_data_dir)
 		path = os.path.join(path, name)
 		if not os.path.isdir(path):
 			os.makedirs(path)
@@ -926,7 +926,7 @@ class Platform(NamedConfigurable):
 
 	@property
 	def datadir(self):
-		path = os.path.expanduser(twopence_user_data_dir)
+		path = os.path.expanduser(twopence.user_data_dir)
 		path = os.path.join(path, self.name)
 		if not os.path.isdir(path):
 			os.makedirs(path)
@@ -934,7 +934,7 @@ class Platform(NamedConfigurable):
 
 	@property
 	def platformdir(self):
-		path = os.path.expanduser(twopence_user_config_dir)
+		path = os.path.expanduser(twopence.user_config_dir)
 		path = os.path.join(path, "platform.d")
 		if not os.path.isdir(path):
 			os.makedirs(path)
@@ -1385,8 +1385,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 
 class Config(Configurable):
 	_default_config_dirs = [
-		# This is defined in paths.py
-		twopence_global_config_dir,
+		twopence.global_config_dir,
 	]
 
 	schema = [

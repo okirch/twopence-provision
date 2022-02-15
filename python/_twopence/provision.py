@@ -10,13 +10,14 @@
 ##################################################################
 
 import os
-from .paths import *
+import twopence
+
 from .logging import *
 
 class ProvisioningFile:
 	def __init__(self, *names):
 		self.name = os.path.join(*names)
-		self.path = os.path.join(twopence_provision_script_dir, *names)
+		self.path = os.path.join(twopence.provision_script_dir, *names)
 
 	def load(self):
 		path = self.path

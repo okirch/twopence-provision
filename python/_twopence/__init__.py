@@ -7,7 +7,6 @@
 ##################################################################
 
 from .logging import *
-from .paths import *
 from .manifest import BOM
 from .backend import Backend
 from .topology import TestTopology
