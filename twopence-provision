@@ -411,7 +411,8 @@ class ActionPlatform(BasicAction):
 		all = []
 		for info in config.locatePlatformFiles():
 			for platform in info.platforms:
-				all.append((platform, info))
+				if platform.os:
+					all.append((platform, info))
 
 		all = sorted(all, key = lambda pair: (pair[0].vendor, pair[0].os, pair[0].name))
 

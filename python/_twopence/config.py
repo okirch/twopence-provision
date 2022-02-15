@@ -1439,10 +1439,12 @@ class Config(Configurable):
 		schema = [
 			DictNodeSchema('_platforms', 'platform', itemClass = Platform),
 			DictNodeSchema('_builds', 'build', itemClass = Build),
+			DictNodeSchema('_requirements', 'requirement', itemClass = ConfigRequirement),
 			StringAttributeSchema('build_time', 'build-time'),
 		]
 
 		def __init__(self, path):
+			super().__init__()
 			self.path = path
 			self.configureFromPath(path)
 
