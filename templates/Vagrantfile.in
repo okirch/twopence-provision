@@ -48,6 +48,10 @@ Vagrant.configure("2") do |config|
 
   config.vm.allow_hosts_modification = true
 
+  config.vm.provider :libvirt do |domain|
+    domain.memory = 2048
+  end
+
 @VAGRANT_PROVISION_STAGES@
 
   if features.include? 'reboot'
