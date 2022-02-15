@@ -9,9 +9,9 @@
 
 import sys
 import os
-from _twopence.provision import *
-from _twopence.provision.topology import TopologyStatus
-from _twopence.provision.paths import *
+from twopence.provision import *
+from twopence.provision.topology import TopologyStatus
+from twopence.provision.paths import *
 
 global_config_files	= [
 	"twopence.conf",

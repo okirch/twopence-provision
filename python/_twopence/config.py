@@ -1385,7 +1385,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 
 class Config(Configurable):
 	_default_config_dirs = [
-		# This is defines in _twopence/paths.py
+		# This is defined in paths.py
 		twopence_global_config_dir,
 	]
 

@@ -5,7 +5,7 @@ LIBDIR	= /usr/lib
 TWP_ETCDIR	= $(TWOPENCE_ETCDIR)
 TWP_BINDIR	= $(TWOPENCE_BINDIR)
 TWP_LIBDIR	= $(PROVISION_LIBDIR)
-TWP_PYDIR	= $(PYTHON_INSTDIR)/_twopence/provision
+TWP_PYDIR	= $(PYTHON_INSTDIR)/twopence/provision
 
 CONFIGS		= provision.conf \
 		  suse-registration.conf
