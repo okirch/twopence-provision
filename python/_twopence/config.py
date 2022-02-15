@@ -1576,7 +1576,7 @@ class Config(Configurable):
 		return result
 
 	def finalizeNode(self, node, backend):
-		platform = self.platformForNode(node, backend)
+		platform = self.platformForNode(node)
 		if not platform.resolveImage(self, backend.name):
 			raise ConfigError("Unable to determine image for node %s" % node.name)
 
@@ -1626,7 +1626,7 @@ class Config(Configurable):
 	def createNode(self, name):
 		return self._nodes.create(name)
 
-	def platformForNode(self, node, backend):
+	def platformForNode(self, node):
 		if node.platform:
 			platform = self.getPlatform(node.platform)
 			if platform:
@@ -1650,6 +1650,13 @@ class Config(Configurable):
 			raise ConfigError("Cannot find platform \"%s\" for default role" % (self.defaultRole.platform))
 
 		raise ConfigError("No platform defined for node \"%s\" (role \"%s\")" % (node.name, node.role))
+
+	def getPlatformFeatures(self):
+		result = set()
+		for node in self.nodes:
+			platform = self.platformForNode(node)
+			result.update(set(platform.features))
+		return result
 
 ##################################################################
 # Handle requirements
