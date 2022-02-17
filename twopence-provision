@@ -14,11 +14,6 @@ import twopence
 from twopence.provision import *
 from twopence.provision.topology import TopologyStatus
 
-global_config_files	= [
-	"twopence.conf",
-	"provision.conf",
-]
-
 class BasicAction(object):
 	def __init__(self, args):
 		self.args = args
@@ -28,7 +23,7 @@ class BasicAction(object):
 	def loadEmptyConfig(self):
 		if self._config is None:
 			config = Config(None)
-			for path in global_config_files:
+			for path in twopence.global_config_files:
 				config.load(path)
 			config.addDirectory(twopence.user_config_dir)
 			self._config = config
@@ -88,7 +83,7 @@ class Action(BasicAction):
 		config.status = bom.status
 		config.logspace = bom.logspace
 
-		for path in global_config_files:
+		for path in twopence.global_config_files:
 			config.load(path)
 
 		# Note: we load global config files first; THEN
