@@ -1402,6 +1402,8 @@ class Config(Configurable):
 		DictNodeSchema('_requirements', 'requirement', itemClass = ConfigRequirement),
 		ListAttributeSchema('_repositories', 'repository'),
 		ParameterNodeSchema('_parameters', 'parameters'),
+
+		DictNodeSchema('_compatibility', 'compatibility', itemClass = ConfigOpaque),
 	]
 
 	def __init__(self, workspace):
