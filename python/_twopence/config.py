@@ -1313,18 +1313,12 @@ class FinalNodeConfig(EmptyNodeConfig):
 		self.mergePlatformOrBuild(platform)
 		for build in build_options:
 			self.mergePlatformOrBuild(build)
+			self.buildResult.features += build.features
+			self.buildResult.resources += build.resources
 
 			# override any backend specific settings from the build
 			# option
 			self.backends.merge(build.backends)
-
-		for stage in platform.stages.values():
-			# stage.only can be one of
-			#  build: only applicable during build; so don't publish to resulting image
-			#  once: only execute once; don't publish to resulting image either
-			#
-			if stage.only is None:
-				self.buildResult.stages.add(stage)
 
 	def mergePlatformOrBuild(self, p):
 		if p.base_platforms is not None:
@@ -1363,21 +1357,13 @@ class FinalNodeConfig(EmptyNodeConfig):
 			if repo.enabled and repo not in self.repositories:
 				self.repositories.append(repo)
 
-			self.buildResult.repositories.add(repo)
-
-		self.buildResult.features += p.features
-		self.buildResult.resources += p.resources
-
-		# This is a pretty blunt axe: the platform we're building inherits
-		# all actions from the base platform and the build options.
-		self.buildResult.shellActions.update(p.shellActions)
-
 	def describeBuildResult(self):
 		base = self.platform
 
 		result = Platform(base.name)
 		result.vendor = base.vendor
 		result.os = base.os
+		result._base_platforms.insert(0, base.name)
 
 		self.buildResult = result
 		return result
