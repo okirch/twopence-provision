@@ -1066,6 +1066,7 @@ class Role(NamedConfigurable):
 		ListAttributeSchema('install'),
 		ListAttributeSchema('start'),
 		ListAttributeSchema('features'),
+		ListAttributeSchema('build'),
 	]
 
 class Node(NamedConfigurable):
@@ -1596,12 +1597,18 @@ class Config(Configurable):
 		if not platform.resolveImage(self, backend.name):
 			raise ConfigError("Unable to determine image for node %s" % node.name)
 
+		roles = []
+		role = self.getRole("default")
+		if role:
+			roles.append(role)
+		role = self.getRole(node.role)
+		if role:
+			roles.append(role)
+
 		build_options = []
-		for name in node.build:
-			build = self.getBuild(name)
-			if build is None:
-				raise ConfigError("Node %s wants to use feature %s, but I can't find it" % (node.name, name))
-			build_options.append(build)
+		self._updateBuildOptions(node, build_options, node.build)
+		for role in roles:
+			self._updateBuildOptions(node, build_options, role.build)
 
 		if not platform.vendor or not platform.os:
 			raise ConfigError("Node %s uses platform %s, which lacks a vendor and os definition" % (platform.name, node.name))
@@ -1620,12 +1627,7 @@ class Config(Configurable):
 
 		result = FinalNodeConfig(node, platform, build_options, satisfied)
 
-		role = self.getRole("default")
-		if role:
-			result.fromRole(role)
-
-		role = self.getRole(node.role)
-		if role:
+		for role in roles:
 			result.fromRole(role)
 
 		# Extract and apply backend specific configuration from platform and node
@@ -1634,6 +1636,13 @@ class Config(Configurable):
 		debug(f"Backend {backend.name} configured {node.name} as {backendNode}")
 
 		return result
+
+	def _updateBuildOptions(self, node, build_options, names):
+		for name in names:
+			build = self.getBuild(name)
+			if build is None:
+				raise ConfigError(f"Node {node.name} wants to use feature {name}, but I can't find it")
+			build_options.append(build)
 
 	@staticmethod
 	def createEmptyNode(name, workspace = None):
