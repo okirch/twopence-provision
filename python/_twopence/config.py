@@ -898,6 +898,12 @@ class Platform(NamedConfigurable):
 			search += platform.base_platforms
 		return None
 
+	def repositoryIsActive(self, repo):
+		return repo.active
+
+	def repositoryMarkActive(self, repo):
+		repo.active = True
+
 	##########################################################
 	# The remaining methods and properties are for newly
 	# built silver images only
@@ -1116,6 +1122,7 @@ class EmptyNodeConfig:
 		self.role = None
 		self.platform = None
 		self.repositories = []
+		self.activate_repositories = []
 		self.install = []
 		self.start = []
 		self.requires = []
@@ -1203,7 +1210,7 @@ class EmptyNodeConfig:
 		self.buildGenericStage("install-packages", self.install, action = "install-package")
 		self.buildGenericStage("start-services", self.start, action = "start-service")
 		self.buildGenericStage("add-repositories",
-						filter(lambda repo: not repo.active, self.repositories),
+						self.activate_repositories,
 						actionFunc = lambda repo:
 							f"install-repository {repo.url} {repo.name} --key='{repo.keyfile}' --vendor='{repo.x_zypp_vendor}'"
 							# this is getting ugly
@@ -1256,12 +1263,7 @@ class EmptyNodeConfig:
 		result.export("TWOPENCE_ARCH", self.platform.arch)
 		result.export("TWOPENCE_FEATURES", self.features)
 
-		activate_repos = []
-		for repo in self.repositories:
-			if repo.active:
-				print("Repository %s already active; no need to activate it" % repo.name)
-				continue
-
+		for repo in self.activate_repositories:
 			name = repo.name
 			result.export("TWOPENCE_REPO_%s_URL" % name, repo.url)
 
@@ -1277,15 +1279,15 @@ class EmptyNodeConfig:
 			if repo.x_zypp_vendor:
 				result.export("TWOPENCE_REPO_%s_ZYPP_VENDOR" % name, repo.x_zypp_vendor)
 
-			activate_repos.append(name)
-
 			# When we build a silver image, the definition for this repo is written
 			# to the platform config file - but marked as "active". When we then
 			# provision a machine with this image, the flag tells us that we do not
-			# have to activate it again (see a few above)
-			repo.active = True
+			# have to activate it again
+			if self.buildResult:
+				self.buildResult.repositoryMarkActive(repo)
 
-		result.export("TWOPENCE_ADD_REPOSITORIES", activate_repos)
+		result.export("TWOPENCE_ADD_REPOSITORIES",
+				list(repo.name for repo in self.activate_repositories))
 
 		for response in self.satisfiedRequirements:
 			respName = response.name.replace('-', '_')
@@ -1634,6 +1636,10 @@ class Config(Configurable):
 		backendNode = backend.attachNode(result)
 		result.configureBackend(backend.name, backendNode)
 		debug(f"Backend {backend.name} configured {node.name} as {backendNode}")
+
+		for repo in result.repositories:
+			if not platform.repositoryIsActive(repo):
+				result.activate_repositories.append(repo)
 
 		return result
 
