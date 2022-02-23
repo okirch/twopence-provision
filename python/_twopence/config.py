@@ -868,6 +868,7 @@ class Platform(NamedConfigurable):
 		ListAttributeSchema('install'),
 		ListAttributeSchema('start'),
 		ListAttributeSchema('_active_repositories', 'active-repositories'),
+		ListAttributeSchema('_applied_stages', 'applied-stages'),
 
 		DictNodeSchema('repositories', 'repository', itemClass = Repository),
 		DictNodeSchema('imagesets', 'imageset', itemClass = Imageset),
@@ -1343,6 +1344,12 @@ class FinalNodeConfig(EmptyNodeConfig):
 			if stage.only == 'build' and self.name != 'build':
 				debug("Skipping stage %s from %s (marked as %s only)" % (stage.name, p, stage.only))
 				continue
+
+			if stage.only == 'once':
+				if stage.name in self.platform._applied_stages:
+					debug(f"Skipping stage {stage.name} from {p} (marked as 'once' and already applied)")
+					continue
+				self.buildResult._applied_stages.append(stage.name)
 
 			self.mergeStage(stage)
 
