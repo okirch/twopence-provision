@@ -867,6 +867,7 @@ class Platform(NamedConfigurable):
 		StringAttributeSchema('build_time', 'build-time'),
 		ListAttributeSchema('install'),
 		ListAttributeSchema('start'),
+		ListAttributeSchema('_always_build', 'always-build'),
 		ListAttributeSchema('_active_repositories', 'active-repositories'),
 		ListAttributeSchema('_applied_stages', 'applied-stages'),
 
@@ -1602,6 +1603,7 @@ class Config(Configurable):
 			roles.append(role)
 
 		build_options = []
+		self._updateBuildOptions(node, build_options, platform._always_build)
 		self._updateBuildOptions(node, build_options, node.build)
 		for role in roles:
 			self._updateBuildOptions(node, build_options, role.build)
