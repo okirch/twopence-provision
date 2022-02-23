@@ -887,6 +887,17 @@ class Platform(NamedConfigurable):
 	def getRepository(self, name):
 		return self.repositories.get(name)
 
+	def searchRepository(self, name):
+		search = [self]
+		while search:
+			platform = search.pop(0)
+			repo = platform.getRepository(name)
+			if repo is not None:
+				return repo
+
+			search += platform.base_platforms
+		return None
+
 	##########################################################
 	# The remaining methods and properties are for newly
 	# built silver images only
@@ -1143,7 +1154,10 @@ class EmptyNodeConfig:
 			return
 
 		for name in role.repositories:
-			repo = self.platform.getRepository(name)
+			# note the use of searchRespository(). This does not just look at the
+			# repos defined in self.platform itself, but any of its base
+			# platforms, too
+			repo = self.platform.searchRepository(name)
 			if repo is None:
 				raise ConfigError("instance %s wants to use repository %s, but platform %s does not define it" % (
 							self.name, name, self.platform.name))

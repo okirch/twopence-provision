@@ -1,0 +1,17 @@
+#
+# if we enable selinux at the same time as twopence, we usually
+# install the twopence-test-server before selinux is enabled.
+# and as a consequence, the %post script does not install the
+# selinux policy for twopence-test-server
+#
+
+function maybe_install_twopence_policy {
+
+	_twopence_policy=/usr/lib/twopence-0/twopence.pp
+
+	if [ -f "$_twopence_policy" ]; then
+		echo -n "Installing twopence SELinux policy... "
+		semodule -i /usr/lib/twopence-0/twopence.pp
+		echo "done."
+	fi
+}
