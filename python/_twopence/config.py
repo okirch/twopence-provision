@@ -621,7 +621,6 @@ class Repository(NamedConfigurable):
 		StringAttributeSchema('url'),
 		StringAttributeSchema('keyfile'),
 		BooleanAttributeSchema('enabled'),
-		BooleanAttributeSchema('active'),
 
 		StringAttributeSchema('x_zypp_vendor', key = 'x-zypp-vendor'),
 	]
@@ -868,6 +867,7 @@ class Platform(NamedConfigurable):
 		StringAttributeSchema('build_time', 'build-time'),
 		ListAttributeSchema('install'),
 		ListAttributeSchema('start'),
+		ListAttributeSchema('_active_repositories', 'active-repositories'),
 
 		DictNodeSchema('repositories', 'repository', itemClass = Repository),
 		DictNodeSchema('imagesets', 'imageset', itemClass = Imageset),
@@ -899,10 +899,11 @@ class Platform(NamedConfigurable):
 		return None
 
 	def repositoryIsActive(self, repo):
-		return repo.active
+		return repo.name in self._active_repositories
 
 	def repositoryMarkActive(self, repo):
-		repo.active = True
+		if repo.name not in self._active_repositories:
+			self._active_repositories.append(repo.name)
 
 	##########################################################
 	# The remaining methods and properties are for newly
