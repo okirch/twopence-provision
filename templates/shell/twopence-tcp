@@ -4,5 +4,6 @@
 # Only do this if twopence has been installed.
 #
 if [ -d /etc/twopence ]; then
+	echo "Configuring twopence server to listen on port 4000"
 	echo 'port tcp { port 4000; }' >/etc/twopence/ports.conf
 fi

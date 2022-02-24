@@ -277,6 +277,12 @@ class VagrantBackend(Backend):
 		self.listing = None
 
 	def attachNode(self, node):
+		# detect whether the node we want to provision/build has twopence enabled. If
+		# it does, we also enable "twopence-tcp", which essentially configures
+		# the twopence test server to listen on a TCP port
+		if 'twopence' in node.features + node.requestedBuildOptions:
+			node.requestedBuildOptions.append('twopence-tcp')
+
 		try:
 			return node.vagrant
 		except:
@@ -418,14 +424,6 @@ class VagrantBackend(Backend):
 		return VagrantInstance(instanceConfig, instanceWorkspace, savedInstanceState)
 
 	def buildProvisioning(self, instanceConfig):
-		# Add backend specific provisioning commands
-		pstage = instanceConfig.createStage("provision")
-		pstage.zap()
-
-		# This tells the twopence server where to listen for incoming
-		# connections.
-		pstage.run.append("twopence-tcp")
-
 		result = []
 		for s in instanceConfig.cookedStages():
 			formatted = ""
