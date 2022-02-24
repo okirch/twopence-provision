@@ -1,2 +1,0 @@
-# This is executed by SELinux provisioning, after the relabelling reboot
-selinux-ready
