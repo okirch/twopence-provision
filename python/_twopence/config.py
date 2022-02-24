@@ -1135,6 +1135,7 @@ class EmptyNodeConfig:
 		self.satisfiedRequirements = None
 		self._stages = {}
 		self._shellActions = {}
+		self.requestedBuildOptions = []
 
 	@property
 	def image(self):
@@ -1178,6 +1179,7 @@ class EmptyNodeConfig:
 		self.install += role.install
 		self.start += role.start
 		self.features += role.features
+		self.requestedBuildOptions += role.build
 
 	def persistInfo(self, nodePersist):
 		nodePersist.features = self.features
@@ -1300,7 +1302,7 @@ class EmptyNodeConfig:
 		return result
 
 class FinalNodeConfig(EmptyNodeConfig):
-	def __init__(self, node, platform, build_options, satisfied_requirements):
+	def __init__(self, node, platform, roles, satisfied_requirements):
 		super().__init__(node.name)
 
 		self.platform = platform
@@ -1312,7 +1314,19 @@ class FinalNodeConfig(EmptyNodeConfig):
 		self.describeBuildResult()
 
 		self.mergePlatformOrBuild(platform)
-		for build in build_options:
+
+		self.requestedBuildOptions += platform._always_build
+		self.requestedBuildOptions += node.build
+
+		for role in roles:
+			self.fromRole(role)
+
+	def resolveBuildOptions(self, config):
+		for name in self.requestedBuildOptions:
+			build = config.getBuild(name)
+			if build is None:
+				raise ConfigError(f"Node {self.name} wants to use feature {name}, but I can't find it")
+
 			self.mergePlatformOrBuild(build)
 			self.buildResult.features += build.features
 			self.buildResult.resources += build.resources
@@ -1602,12 +1616,6 @@ class Config(Configurable):
 		if role:
 			roles.append(role)
 
-		build_options = []
-		self._updateBuildOptions(node, build_options, platform._always_build)
-		self._updateBuildOptions(node, build_options, node.build)
-		for role in roles:
-			self._updateBuildOptions(node, build_options, role.build)
-
 		if not platform.vendor or not platform.os:
 			raise ConfigError("Node %s uses platform %s, which lacks a vendor and os definition" % (platform.name, node.name))
 
@@ -1623,13 +1631,18 @@ class Config(Configurable):
 
 				satisfied.append(response)
 
-		result = FinalNodeConfig(node, platform, build_options, satisfied)
-
-		for role in roles:
-			result.fromRole(role)
+		result = FinalNodeConfig(node, platform, roles, satisfied)
 
 		# Extract and apply backend specific configuration from platform and node
 		backendNode = backend.attachNode(result)
+
+		# Now resolve all requested build options.
+		# We do it here, because the backend may request additional build options
+		# in backend.attachNode() above
+		result.resolveBuildOptions(self)
+
+		# And finally, configure the backend specific options for this node,
+		# such as template, url, etc but also the timeout
 		result.configureBackend(backend.name, backendNode)
 		debug(f"Backend {backend.name} configured {node.name} as {backendNode}")
 
@@ -1638,13 +1651,6 @@ class Config(Configurable):
 				result.activate_repositories.append(repo)
 
 		return result
-
-	def _updateBuildOptions(self, node, build_options, names):
-		for name in names:
-			build = self.getBuild(name)
-			if build is None:
-				raise ConfigError(f"Node {node.name} wants to use feature {name}, but I can't find it")
-			build_options.append(build)
 
 	@staticmethod
 	def createEmptyNode(name, workspace = None):
