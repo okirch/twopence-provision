@@ -13,5 +13,7 @@ function maybe_install_twopence_policy {
 		echo -n "Installing twopence SELinux policy... "
 		semodule -i /usr/lib/twopence-0/twopence.pp
 		echo "done."
+
+		systemctl restart twopence-test-server
 	fi
 }
