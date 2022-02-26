@@ -1604,17 +1604,11 @@ class Config(Configurable):
 		return result
 
 	def finalizeNode(self, node, backend):
-		platform = self.platformForNode(node)
+		roles = self.rolesForNode(node)
+
+		platform = self.platformForNode(node, roles)
 		if not platform.resolveImage(self, backend.name):
 			raise ConfigError("Unable to determine image for node %s" % node.name)
-
-		roles = []
-		role = self.getRole("default")
-		if role:
-			roles.append(role)
-		role = self.getRole(node.role)
-		if role:
-			roles.append(role)
 
 		if not platform.vendor or not platform.os:
 			raise ConfigError("Node %s uses platform %s, which lacks a vendor and os definition" % (platform.name, node.name))
@@ -1659,7 +1653,18 @@ class Config(Configurable):
 	def createNode(self, name):
 		return self._nodes.create(name)
 
-	def platformForNode(self, node):
+	def rolesForNode(self, node):
+		roles = []
+		for name in (node.role, "default"):
+			role = self.getRole(name)
+			if role:
+				roles.append(role)
+		return roles
+
+	def platformForNode(self, node, roles = None):
+		if roles is None:
+			roles = self.rolesForNode(node)
+
 		if node.platform:
 			platform = self.getPlatform(node.platform)
 			if platform:
@@ -1667,20 +1672,15 @@ class Config(Configurable):
 
 			raise ConfigError("Cannot find platform \"%s\" for node \"%s\"" % (node.platform, node.name))
 
-		role = self.getRole(node.role)
-		if role and role.platform:
+		for role in roles:
+			if not role.platform:
+				continue
+
 			platform = self.getPlatform(role.platform)
 			if platform:
 				return platform
 
 			raise ConfigError("Cannot find platform \"%s\" for role \"%s\"" % (role.platform, node.role))
-
-		if self.defaultRole.platform:
-			platform = self.getPlatform(self.defaultRole.platform)
-			if platform:
-				return platform
-
-			raise ConfigError("Cannot find platform \"%s\" for default role" % (self.defaultRole.platform))
 
 		raise ConfigError("No platform defined for node \"%s\" (role \"%s\")" % (node.name, node.role))
 
