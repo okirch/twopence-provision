@@ -12,7 +12,7 @@ from .backend import Backend
 from .topology import TestTopology
 from .config import Config, ConfigError, RequirementsManager
 
-def queryPlatformFeatures(platformName):
+def __buildDummyConfig():
 	import twopence
 
 	config = Config("/no/where")
@@ -23,9 +23,19 @@ def queryPlatformFeatures(platformName):
 	# Note: we load global config files first; THEN
 	# we add user directories to the config search path.
 	config.addDirectory(twopence.user_config_dir)
+	return config
+
+def queryPlatformFeatures(platformName):
+	config = __buildDummyConfig()
 
 	platform = config.getPlatform(platformName)
 	if platform is None:
 		return None
 
 	return set(platform.features)
+
+def locatePlatformFiles():
+	config = __buildDummyConfig()
+
+	for pi in config.locatePlatformFiles():
+		yield pi
