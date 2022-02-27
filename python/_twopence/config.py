@@ -1082,13 +1082,17 @@ class Node(NamedConfigurable):
 	info_attrs = ["name", "role", "platform", "build"]
 
 	schema = [
-		StringAttributeSchema('role'),
+		StringAttributeSchema('_role', 'role'),
 		StringAttributeSchema('platform'),
 		ListAttributeSchema('build'),
 		ListAttributeSchema('install'),
 		ListAttributeSchema('start'),
 		DictNodeSchema("_backends", "backend", itemClass = ConfigOpaque),
 	]
+
+	@property
+	def role(self):
+		return self._role or self.name
 
 class Build(Platform):
 	info_attrs = Platform.info_attrs + ['base_platform']
@@ -1306,6 +1310,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 		super().__init__(node.name)
 
 		self.platform = platform
+		self.role = node.role
 		self.install += node.install
 		self.start += node.start
 		self.backends = node._backends
