@@ -175,8 +175,9 @@ class Action(BasicAction):
 			# this is a bit whacky.
 			ic.cookedStages()
 
-			print()
-			print(f"  Provisioning recipes:")
+			if ic.stages:
+				print()
+				print(f"  Provisioning recipes:")
 			for stage in ic.stages:
 				print(f"    Stage {stage.name} reboot={stage.reboot}")
 				for name in stage.run:
