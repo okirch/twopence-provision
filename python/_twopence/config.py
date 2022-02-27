@@ -1139,6 +1139,7 @@ class EmptyNodeConfig:
 		self.satisfiedRequirements = None
 		self._stages = {}
 		self._shellActions = {}
+		self._provisioning = None
 		self.requestedBuildOptions = []
 
 	@property
@@ -1216,6 +1217,11 @@ class EmptyNodeConfig:
 		mine.merge(stage)
 
 	def cookedStages(self):
+		if self._provisioning is None:
+			self._provisioning = self.buildProvisioning()
+		return self._provisioning
+
+	def buildProvisioning(self):
 		self.buildGenericStage("install-packages", self.install, action = "install-package")
 		self.buildGenericStage("start-services", self.start, action = "start-service")
 		self.buildGenericStage("add-repositories",
@@ -1234,17 +1240,6 @@ class EmptyNodeConfig:
 		preamble = []
 		for file in preambleAction.files():
 			preamble += file.load()
-
-		if verbose_enabled():
-			verbose(f"Provisioning recipe for node {self.name}:")
-			for stage in self.stages:
-				verbose(f" Stage {stage.name} reboot={stage.reboot}")
-				for name in stage.run:
-					verbose(f"    run {stage.category}/{name}")
-				for invocation in stage.invocations:
-					verbose(f"    {invocation.command}")
-					if invocation.path:
-						verbose(f"      (script sourced from {invocation.path})")
 
 		return ProvisioningScriptCollection(self.stages, self.exportShellVariables(), preamble = preamble)
 

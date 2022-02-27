@@ -125,11 +125,68 @@ class Action(BasicAction):
 			self.shutdownTopology(topology)
 			self.destroyTopology(topology)
 
+		self.displayTopology(topology)
+
 		if not topology.prepare():
 			self.fatal("Unable to prepare all instances")
 
 		if not topology.start():
 			self.fatal("Unable to start instance(s)")
+
+	def displayTopology(self, topology):
+		print()
+		for ic in topology.instanceConfigs:
+			print(f"Node {ic.name}")
+			print(f"  Role     {ic.role}")
+
+			platform = ic.platform
+			print(f"  Vendor   {platform.vendor}")
+			print(f"  OS       {platform.os}")
+			print(f"  Platform {platform.name}")
+			if platform.features:
+				print(f"  Features {', '.join(platform.features)}")
+			if platform.requires:
+				print(f"  Requires {', '.join(platform.requires)}")
+			#print(f"  Image    {ic.image}")
+			print(f"  Keyfile  {ic.keyfile}")
+
+			displayedSome = False
+			for repo in ic.repositories:
+				if platform.repositoryIsActive(repo):
+					continue
+				if not displayedSome:
+					print()
+					print("  Activating the following repositories:")
+					displayedSome = True
+				print(f"    {repo.name:15} {repo.url}")
+
+			if ic.install:
+				print()
+				print("  Installing the following packages:")
+				for name in ic.install:
+					print(f"    {name}")
+
+			if ic.start:
+				print()
+				print("  Starting the following service:")
+				for name in ic.start:
+					print(f"    {name}")
+
+			# this is a bit whacky.
+			ic.cookedStages()
+
+			print()
+			print(f"  Provisioning recipes:")
+			for stage in ic.stages:
+				print(f"    Stage {stage.name} reboot={stage.reboot}")
+				for name in stage.run:
+					print(f"      run {stage.category}/{name}")
+				for invocation in stage.invocations:
+					print(f"      {invocation.command}")
+					if invocation.path:
+						print(f"        (script sourced from {invocation.path})")
+
+			print()
 
 	def shutdownTopology(self, topology):
 		verbose("Stopping all instances")
