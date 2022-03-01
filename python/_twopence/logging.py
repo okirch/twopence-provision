@@ -6,8 +6,7 @@
 #
 ##################################################################
 
-
-opt_verbose = 1
+from twopence import logger, debug, verbose, info, warn, error
 
 def setVerbosity(num):
 	global opt_verbose
@@ -15,18 +14,9 @@ def setVerbosity(num):
 	opt_verbose = num
 
 def debug_enabled():
-	return opt_verbose >= 2
+	return debug.enabled
 
 def verbose_enabled():
-	return opt_verbose >= 1
+	return verbose.enabled
 
-def debug(msg):
-	if opt_verbose >= 2:
-		print("DEBUG: %s" % msg)
-
-def verbose(msg):
-	if opt_verbose >= 1:
-		print("%s" % msg)
-
-def warning(msg):
-	print("WARNING: %s" % msg)
+warning = warn

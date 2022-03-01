@@ -66,11 +66,13 @@ class Action(BasicAction):
 	@property
 	def backend(self):
 		if self._backend is None:
-			bom = self.bom
-			self._backend = Backend.create(bom.backend)
+			self.setBackend(self.bom.backend)
+		return self._backend
 
-			if not self._auto_update_images:
-				self._backend.auto_update = False
+	def setBackend(self, name):
+		self._backend = Backend.create(name)
+		if not self._auto_update_images:
+			self._backend.auto_update = False
 		return self._backend
 
 	def loadConfig(self, purpose = None):
@@ -109,6 +111,9 @@ class Action(BasicAction):
 		config = self.loadConfig(purpose)
 
 		config.validate(purpose = purpose)
+		if config.backend:
+			self.setBackend(config.backend)
+		backend = self.backend
 
 		return TestTopology(backend, config = config, workspace = self.workspace)
 
@@ -682,14 +687,12 @@ parser = build_arg_parser()
 args = parser.parse_args()
 
 if args.debug:
-	setVerbosity(2)
+	logger.enableLogLevel('debug')
 elif not args.quiet:
-	setVerbosity(1)
-else:
-	setVerbosity(0)
+	logger.disableLogLevel('verbose')
 
 if not args.command:
-	print("Error: missing subcommand")
+	error("missing subcommand")
 	parser.print_help()
 	exit(2)
 

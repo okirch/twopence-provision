@@ -291,41 +291,24 @@ class VagrantBackend(Backend):
 		node.vagrant = VagrantNodeConfig()
 		return node.vagrant
 
-	def detect(self, workspace, status, expectedInstanceConfigs):
-		assert(workspace)
+	def createInstance(self, instanceConfig, instanceWorkspace, persistentState):
+		return VagrantInstance(instanceConfig, instanceWorkspace, persistentState)
 
+	def detect(self, topology, instances):
 		found = []
-		for instanceConfig in expectedInstanceConfigs:
-			savedState = status.createNodeState(instanceConfig.name)
-
-			instance = self.detectInstance(workspace, instanceConfig, savedState)
-			if instance:
+		for instance in instances:
+			if self.detectInstance(instance):
 				found.append(instance)
-
-		for savedInstanceState in status.nodes:
-			if any(instance.name == savedInstanceState.name for instance in found):
-				continue
-
-			dummy = Config.createEmptyNode(savedInstanceState.name)
-			instance = self.detectInstance(workspace, dummy, savedInstanceState)
-			if instance:
-				found.append(instance)
-
 		return found
 
-	def detectInstance(self, workspace, instanceConfig, savedInstanceState = None):
-		assert(workspace)
+	def detectInstance(self, instance):
+		debug(f"detectInstance({instance.name})")
 
-		debug("detectInstance(%s)" % instanceConfig.name)
-		instanceWorkspace = os.path.join(workspace, instanceConfig.name)
-
-		magic_path = os.path.join(instanceWorkspace, ".vagrant")
+		magic_path = os.path.join(instance.workspace, ".vagrant")
 		if not os.path.isdir(magic_path):
-			return None
+			return False
 
-		debug("Instance %s: workspace exists" % instanceConfig.name)
-
-		instance = VagrantInstance(instanceConfig, instanceWorkspace, savedInstanceState)
+		debug(f"Instance {instance.name}: workspace exists")
 		instance.exists = True
 
 		# This calls setStateFromVagrantStatus(), which will do one of these
@@ -371,57 +354,43 @@ class VagrantBackend(Backend):
 
 		return VagrantBoxInfo(name = vagrantNode.image, url = vagrantNode.url, provider = "libvirt")
 
-	def downloadImage(self, workspace, instanceConfig):
-		download = self.identifyImageToDownload(instanceConfig)
+	def downloadImage(self, instance):
+		download = self.identifyImageToDownload(instance.config)
 		if download:
 			self.addImage(download)
 
 		return True
 
-	def prepareInstance(self, workspace, instanceConfig, savedInstanceState):
-		assert(workspace)
-
-		template = instanceConfig.vagrant.template or self.template
+	def prepareInstance(self, instance):
+		template = instance.config.vagrant.template or self.template
 		if template is None:
 			raise ValueError("Cannot prepare vagrant instance - no template defined")
 
-		instanceWorkspace = os.path.join(workspace, instanceConfig.name)
+		# this throws an exception in case of errors
+		instance.createWorkspace()
 
-		# If the instance workspace exists already, we should fail.
-		# However, it may be a leftover from an aborted attempt.
-		# Try to be helpful and remove the workspace IFF it is empty
-		if os.path.isdir(instanceWorkspace):
-			try:	os.rmdir(instanceWorkspace)
-			except: pass
-
-		if os.path.isdir(instanceWorkspace):
-			raise ValueError("workspace %s already exists" % instanceWorkspace)
-
-		os.makedirs(instanceWorkspace)
-
-		path = os.path.join(workspace, instanceConfig.name, "Vagrantfile")
+		path = instance.workspacePath("Vagrantfile")
 
 		extraData = {}
 
 		# instanceConfig gives us a list of scriptlets for provisioning.
 		# We turn these into a set of config.vm.provision blocks for the
 		# Vagrantfile
-		provisioning = self.buildProvisioning(instanceConfig)
+		provisioning = self.buildProvisioning(instance.config)
 		extraData["VAGRANT_PROVISION_STAGES"] = "\n".join(provisioning)
 
-		extraData["VAGRANT_MACHINE_CONFIG"] = self.buildMachineConfig(instanceConfig)
+		extraData["VAGRANT_MACHINE_CONFIG"] = self.buildMachineConfig(instance.config)
 
-		vagrantNode = instanceConfig.vagrant
+		vagrantNode = instance.config.vagrant
 
 		# For the time being, we simply push the vagrant image name to the
 		# provisioner by setting instanceConfig.image. Not very clean, but
 		# everything else will turn too byzantine.
-		instanceConfig.platform.image = vagrantNode.image
-		debug("Using vagrant box %s" % instanceConfig.image)
+		instance.config.platform.image = vagrantNode.image
+		debug(f"Using vagrant box {vagrantNode.image}")
 
-		self.provisioner.processTemplate(instanceConfig, template, path, extraData)
-
-		return VagrantInstance(instanceConfig, instanceWorkspace, savedInstanceState)
+		self.provisioner.processTemplate(instance.config, template, path, extraData)
+		return instance
 
 	def buildProvisioning(self, instanceConfig):
 		result = []

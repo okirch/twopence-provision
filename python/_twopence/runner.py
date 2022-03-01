@@ -70,6 +70,10 @@ class ExecStatus:
 	def exited(klass, *args, **kwargs):
 		return klass(klass.EXITED, *args, **kwargs)
 
+	@classmethod
+	def running(klass, *args, **kwargs):
+		return klass(klass.RUNNING, *args, **kwargs)
+
 	def __bool__(self):
 		return self.exit_code == 0
 
@@ -86,7 +90,7 @@ class ExecStatus:
 		return "UNKNOWN"
 
 class Runner:
-	def run(self, command, cwd = None, timeout = 10, quiet = False):
+	def run(self, command, cwd = None, timeout = 10, quiet = False, abandonOnString = None):
 		if cwd:
 			print("Executing \"%s\" in directory %s" % (command, cwd))
 		else:
@@ -113,6 +117,9 @@ class Runner:
 
 					print("[%s] %s" % (self.formatTimestamp(startTime), l))
 				output.append(l)
+				if abandonOnString and abandonOnString in l:
+					alarm.cancel()
+					return ExecStatus.running(output)
 			except CommandTimeout:
 				print("[%s] Command Timed Out." % (self.formatTimestamp(startTime), ))
 				p.kill()

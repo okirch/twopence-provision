@@ -277,6 +277,9 @@ class TestTopology:
 		if not os.path.isfile(path):
 			self.saveStatus()
 
+		backend.testcase = self.testcase
+		assert(self.testcase)
+
 	def configure(self, config):
 		config.validate()
 
@@ -308,8 +311,34 @@ class TestTopology:
 	def hasRunningInstances(self):
 		return any(i.running for i in self.instances)
 
+	def createInstance(self, instanceConfig):
+		instanceWorkspace = os.path.join(self.workspace, instanceConfig.name)
+		instanceState = self.persistentState.createNodeState(instanceConfig.name)
+		return self.backend.createInstance(instanceConfig, instanceWorkspace, instanceState)
+
+	def createAllInstances(self, includeStaleInstances = False):
+		found = []
+
+		for instanceConfig in self.instanceConfigs:
+			instance = self.createInstance(instanceConfig)
+			found.append(instance)
+
+		if includeStaleInstances:
+			# Loop over all nodes defined in status.conf - the user may have messed with the test config
+			# file and added/removed nodes.
+			for savedInstanceState in self.persistentState.nodes:
+				if any(instance.name == savedInstanceState.name for instance in found):
+					continue
+
+				dummyConfig = Config.createEmptyNode(savedInstanceState.name)
+				instance = self.createInstance(dummyConfig)
+				found.append(instance)
+
+		return found
+
 	def detect(self, detectNetwork = False):
-		self.instances = self.backend.detect(self.workspace, self.persistentState, self.instanceConfigs)
+		found = self.createAllInstances(includeStaleInstances = True)
+		self.instances = self.backend.detect(self, found)
 		return self.instances
 
 	def requires(self):
@@ -323,15 +352,20 @@ class TestTopology:
 		self.saveStatus()
 
 		success = True
-		for instanceConfig in self.instanceConfigs:
-			if not self.backend.downloadImage(self.workspace, instanceConfig):
-				raise ValueError("Failed to download image for instance %s" % instanceConfig.name)
+		instances = self.createAllInstances()
 
-		for instanceConfig in self.instanceConfigs:
-			instance = self.backend.prepareInstance(self.workspace, instanceConfig,
-						self.persistentState.createNodeState(instanceConfig.name))
+		for instance in instances:
+			if not self.backend.downloadImage(instance):
+				raise ValueError(f"Failed to download image for instance {instance.name}")
+
+		for instance in instances:
+			# Create the workspace directory of this instance.
+			# This throws an exception in case of errors
+			instance.createWorkspace()
+
+			self.backend.prepareInstance(instance)
 			if instance.exists:
-				print("Ouch, instance %s seems to exist" % instance.name)
+				error("Ouch, instance %s seems to exist" % instance.name)
 				success = False
 
 			self.instances.append(instance)

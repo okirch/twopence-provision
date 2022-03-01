@@ -707,6 +707,7 @@ class BuildStage(NamedConfigurable):
 		'other'			: 50,
 		'cleanup'		: 100,
 	}
+	# this is too convoluted
 	defaultCategory = {
 		'preamble'		: 'prep',
 		'prep'			: 'prep',
@@ -914,6 +915,9 @@ class Platform(NamedConfigurable):
 	def addBackend(self, name, **kwargs):
 		saved = self.backends.create(name)
 		saved.data.update(kwargs)
+
+	def hasBackend(self, name):
+		return self.backends.get(name) is not None
 
 	def finalize(self):
 		if not self.keyfile and self._raw_key:
@@ -1142,6 +1146,7 @@ class EmptyNodeConfig:
 		self._provisioning = None
 		self.requestedBuildOptions = []
 
+	# FIXME: unused?
 	@property
 	def image(self):
 		if not self.platform:
@@ -1419,6 +1424,7 @@ class Config(Configurable):
 		IgnoredNodeSchema('defaults'),
 		StringAttributeSchema('workspaceRoot', 'workspace-root'),
 		StringAttributeSchema('workspace'),
+		StringAttributeSchema('backend'),
 		StringAttributeSchema('testcase'),
 		DictNodeSchema('_backends', 'backend', itemClass = ConfigOpaque),
 		DictNodeSchema('_platforms', 'platform', itemClass = Platform),
@@ -1608,7 +1614,7 @@ class Config(Configurable):
 
 		platform = self.platformForNode(node, roles)
 		if not platform.resolveImage(self, backend.name):
-			raise ConfigError("Unable to determine image for node %s" % node.name)
+			raise ConfigError(f"Unable to determine {backend.name} image for node {node.name}")
 
 		if not platform.vendor or not platform.os:
 			raise ConfigError("Node %s uses platform %s, which lacks a vendor and os definition" % (platform.name, node.name))

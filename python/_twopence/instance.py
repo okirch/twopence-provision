@@ -7,41 +7,17 @@
 ##################################################################
 
 from .logging import *
+from .network import *
 import time
 import os
-
-class Network:
-	AF_IPv4 = 4
-	AF_IPv6 = 6
-
-	VALID_FAMILIES = (AF_IPv4, AF_IPv6)
-
-class NetworkInterface:
-	def __init__(self, family, address = None, prefix_len = None):
-		assert(family in Network.VALID_FAMILIES)
-
-		if prefix_len is None:
-			if family == Network.AF_IPv4:
-				prefix_len = 24
-			elif family == Network.AF_IPv6:
-				prefix_len = 64
-			else:
-				raise ValueError("not default prefix len for AF %s" % af)
-
-		self.family = family
-		self.address = address
-		self.prefix_len = prefix_len
-		self.network = "%s/%s" % (address, prefix_len)
-
-	def __str__(self):
-		return "%s/%s" % (self.address, self.prefix_len)
+import shutil
 
 ##################################################################
 # Generic functionality for node instances (eg VMs)
 # Backends derive from this base class
 ##################################################################
 class GenericInstance:
-	def __init__(self, instanceConfig, workspace, persistentState = None):
+	def __init__(self, instanceConfig, workspace = None, persistentState = None):
 		self.config = instanceConfig
 		self.workspace = workspace
 		self.persistent = persistentState
@@ -54,6 +30,33 @@ class GenericInstance:
 
 		if self.persistent:
 			instanceConfig.persistInfo(self.persistent)
+
+	def createWorkspace(self):
+		path = self.workspace
+
+		# If the instance workspace exists already, we should fail.
+		# However, it may be a leftover from an aborted attempt.
+		# Try to be helpful and remove the workspace IFF it is empty
+		if os.path.isdir(path):
+			try:	os.rmdir(path)
+			except: pass
+
+		if os.path.isdir(path):
+			raise ValueError(f"workspace {path} already exists")
+
+		os.makedirs(path)
+		return path
+
+	def workspacePath(self, name):
+		return os.path.join(self.workspace, name)
+
+	def workspaceExists(self):
+		return os.path.exists(self.workspace)
+
+	def removeWorkspace(self):
+		if os.path.exists(self.workspace):
+			shutil.rmtree(self.workspace)
+		self.exists = False
 
 	def addNetworkInterface(self, af, address, prefix_len = None):
 		af = int(af)

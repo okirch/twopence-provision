@@ -14,12 +14,19 @@ class Backend(Configurable):
 		# By default, auto-update images that we get from remote
 		self.auto_update = True
 
+		self.testcase = None
+
 	@staticmethod
 	def create(family):
 		if family == 'vagrant':
 			from .vagrant import VagrantBackend
 
 			return VagrantBackend()
+
+		if family == 'podman':
+			from .podman import PodmanBackend
+
+			return PodmanBackend()
 
 		raise ConfigError("Cannot create backend \"%s\" - unknown backend family" % family)
 
