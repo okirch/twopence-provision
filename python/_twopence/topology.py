@@ -27,6 +27,7 @@ class TopologyStatus:
 			self._vendor = config.get_value("vendor")
 			self._os = config.get_value("os")
 			self._keyfile = config.get_value("keyfile")
+			self._image = config.get_value("image")
 
 		@property
 		def ipv4_address(self):
@@ -67,6 +68,16 @@ class TopologyStatus:
 			if self._resources != value:
 				self._config.set_value("resources", value)
 				self._resources = value
+
+		@property
+		def image(self):
+			return self._image
+
+		@image.setter
+		def image(self, value):
+			if self._image != value:
+				self._config.set_value("image", value)
+				self._image = value
 
 		@property
 		def vendor(self):

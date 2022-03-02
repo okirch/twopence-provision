@@ -179,15 +179,6 @@ class PodmanImageListing:
 
 	def find(self, searchKey):
 		debug(f"ImageListing.find({searchKey})")
-		if searchKey.tag == 'latest':
-			best = None
-			for image in self.images:
-				if searchKey.name in image.imageNames:
-					if best is None or image >= best:
-						best = image
-
-			return best
-
 		for image in self.images:
 			for name in image.imageNames:
 				if name == searchKey:
@@ -225,6 +216,8 @@ class PodmanInstance(GenericInstance):
 		self.command = command
 		self.raw_state = None
 
+		self.autoremove = False
+
 	def setContainerState(self, status):
 		self.container = status
 
@@ -237,14 +230,33 @@ class PodmanInstance(GenericInstance):
 		self.running = self.raw_state == 'running'
 
 	@property
+	def imageSearchKey(self):
+		return self.config.podman.key
+
+	@property
+	def image(self):
+		imageString = None
+		if self.persistent:
+			imageString = self.persistent.image
+		if imageString:
+			return ImageReference.parse(imageString)
+		return None
+
+	@image.setter
+	def image(self, imageKey):
+		debug(f"{self.name}: going to use {imageKey}")
+		if self.persistent:
+			self.persistent.image = str(imageKey)
+
+	@property
 	def short_id(self):
-		if not self.container:
+		if not self.containerId:
 			return None
 
-		return self.container[:12]
+		return self.containerId[:12]
 
 class PodmanNodeConfig(Configurable):
-	info_attrs = ['template', 'image', 'url', 'timeout']
+	info_attrs = ['registry', 'image', 'timeout']
 
 	schema = [
 		Schema.StringAttribute('image'),
@@ -303,8 +315,11 @@ class PodmanBackend(Backend):
 		return node.podman
 
 	def createInstance(self, instanceConfig, instanceWorkspace, persistentState):
+		assert(self.testcase)
+		containerName = f"twopence-{self.testcase}-{instanceConfig.name}"
+
 		return PodmanInstance(instanceConfig, instanceWorkspace, persistentState,
-					containerName = self.makeContainerName(instanceConfig.name))
+					containerName = containerName)
 
 	def detect(self, topology, instances):
 		found = []
@@ -313,65 +328,64 @@ class PodmanBackend(Backend):
 				found.append(instance)
 		return found
 
-	def makeContainerName(self, name):
-		assert(self.testcase)
-		return f"twopence-{self.testcase}-{name}"
-
 	def detectInstance(self, instance):
 		debug(f"detectInstance({instance.name})")
 		return self.detectInstanceState(instance)
 		debug(f"Detected instance {instance.name} (state {instance.raw_state})")
 
-	def findRunningContainer(self, name):
+	def findContainer(self, name):
+		if name is None:
+			return None
+
 		print(f"Checking for running container {name}")
-		with os.popen("sudo podman ps --format json") as f:
+		with os.popen("sudo podman ps -a --format json") as f:
 			data = json.load(f)
 
 		for entry in data:
 			status = ContainerStatus(entry)
 			if name in status.names:
+				print(f"  found {status}")
 				return status
 		return None
 
-	def identifyImageToDownload(self, instanceConfig):
-		podmanNode = instanceConfig.podman
-
-		known = self.listImages()
-
-		searchKey = podmanNode.key
-
+	def identifyImage(self, searchKey):
 		# See if we have the requested name and tag
-		print(f"Looking for {searchKey}")
-		have = known.find(searchKey)
-
-		if have:
-			# Our tag may be out of date with upstream, so make sure we
-			# agree on the version
-			if podmanNode.registry:
-				available = PodmanImageInfo.queryRegistry(searchKey)
-
-				if not available:
-					warn(f"{searchKey}: registry does not know about this image")
-				elif available.imageVersion == have.imageVersion:
-					debug(f"Latest version for {searchKey} is {have.imageVersion}; already present")
-					podmanNode.version = have.imageVersion
-					return None
-				else:
-					debug(f"{searchKey}: our version is outdated (ours={have.imageVersion}, available={available.imageVersion}")
-					return searchKey
-
-		# This is a local image, or the registry query failed - use what we have
-		if have:
-			debug(f"Going to use {have}")
-			podmanNode.version = have.imageVersion
+		have = self.findImage(searchKey)
+		if have is None:
 			return None
 
-		return searchKey
+		# Our tag may be out of date with upstream, so make sure we
+		# agree on the version
+		if not searchKey.registry or searchKey.registry == 'localhost':
+			debug(f"Using local image {have}")
+			return have
+
+		available = PodmanImageInfo.queryRegistry(searchKey)
+		if not available:
+			warn(f"{searchKey}: registry does not know about this image")
+			info(f"Using local image {have}")
+			return have
+
+		if available.imageVersion == have.imageVersion:
+			debug(f"Latest version for {searchKey} is {have.imageVersion}; already present")
+			return have
+
+		debug(f"{searchKey}: our version is outdated (ours={have.imageVersion}, available={available.imageVersion}")
+		return None
 
 	def downloadImage(self, instance):
-		download = self.identifyImageToDownload(instance.config)
-		if download:
-			self.addImage(download)
+		searchKey = instance.imageSearchKey
+		imageInfo = self.identifyImage(searchKey)
+		if imageInfo is None:
+			self.addImage(searchKey)
+			imageInfo = self.identifyImage(searchKey)
+
+		if imageInfo is None:
+			raise ValueError(f"Tried to pull {searchKey}, but still can't find the image locally")
+
+		key = copy.copy(searchKey)
+		key.tag = imageInfo.imageVersion
+		instance.image = key
 
 		return True
 
@@ -384,6 +398,10 @@ class PodmanBackend(Backend):
 		# We turn these into a set of config.vm.provision blocks for the
 		# Podmanfile
 		provisioning = self.buildProvisioning(instance.config)
+
+		# HACK ATTACK - shortcut for testing
+		if False:
+			provisioning = []
 
 		provisioning.append(f'''
 echo "Lift off to the tune of the PodmanDancingMonkey"
@@ -436,6 +454,10 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 
 		return result
 
+	# This is not really a sidecar; I just called it so.
+	# What we do here is copy twopence-test-server and all the shared libs
+	# it requries into a directory, which is then mounted into the container
+	# at runtime.
 	def createSidecar(self, datadir):
 		path = os.path.join(datadir, "sidecar")
 		if os.system(f"twopence create-sidecar {path}") != 0:
@@ -475,7 +497,9 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 
 		print("Starting %s instance (timeout = %d)" % (instance.name, timeout))
 		argv = ["sudo", "podman", "run"]
-		argv += ["--rm=true"]
+
+		if instance.autoremove:
+			argv.append("--rm=true")
 
 		net = self.network
 		if net is not None:
@@ -490,8 +514,7 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 		argv += ["--expose", "4000"]
 		argv += ["--publish", "4000"]
 
-		containerName = self.makeContainerName(instance.config.name)
-		argv += ["--name", containerName]
+		argv += ["--name", instance.containerName]
 
 		if instance.command:
 			command = instance.command
@@ -527,7 +550,7 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 		instance.recordTarget(target)
 
 	def detectInstanceState(self, instance):
-		running = self.findRunningContainer(instance.containerName)
+		running = self.findContainer(instance.containerName)
 		instance.setContainerState(running)
 
 		if instance.running:
@@ -566,11 +589,12 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 	def destroyInstance(self, instance):
 		verbose(f"Destroying {instance.name} instance")
 		if instance.running:
-			status = self.runPodman("kill", instance, timeout = 30)
+			status = self.runPodman("kill", instance)
 			if not status:
 				raise ValueError(f"{instance.name}: podman kill failed: {status}")
 
-		running = self.findRunningContainer(instance.containerId)
+		running = self.findContainer(instance.containerName)
+		debug(f"{instance.containerId} status {running}")
 		if running is not None:
 			status = self.runPodman("rm", instance, timeout = 30)
 			if not status:
@@ -582,43 +606,38 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 		return True
 
 	def saveInstanceImage(self, instance, platform):
-		# It seems podman package --output does not like absolute path names...
-		imageFile = "%s.box" % platform.name
-		imagePath = os.path.join(instance.workspace, imageFile)
+		if instance.containerId is None:
+			raise ValueError(f"Cannot save instance {instance.name} - no container id")
 
-		verbose("Writing image as %s" % imageFile)
-		cmd = "podman --machine-readable package --output %s" % imageFile
+		if instance.image is None:
+			raise ValueError(f"Cannot save instance {instance.name} - don't know original image name")
+
+		outputName = f"{platform.name}:{instance.image.tag}"
+		outputImage = ImageReference("localhost", outputName)
+
+		existingImage = self.findImage(outputImage)
+
+		# FIXME: we should probably remove most if not all of the labels
+		# and replace them with something more a propos
+
+		cmd = f"sudo podman commit {instance.containerId} {outputImage}"
 		status = self.runShellCmd(cmd, cwd = instance.workspace, timeout = 120)
 		if not status:
-			raise ValueError("%s: podman package failed: %s" % (instance.name, status))
+			raise ValueError(f"{instance.name}: podman package failed {status}")
 
-		# Copy the box file from workspace to ~/.twopence/data/podman/
-		return platform.saveImage("podman", imagePath)
+		info("Created image {outputImage}")
 
-	def saveInstanceMeta(self, instance, platform, imagePath):
-		meta = {
-			'name': platform.name,
-			'description': 'Irrelevant Description',
-			'versions': [
-				{
-					"version": platform.makeImageVersion(),
-					"providers": [
-						{
-							"name": "libvirt",
-							"url": imagePath,
-						}
-					]
-				}
-			]
-		}
+		if existingImage:
+			self.runShellCmd(f"sudo podman rmi {existingImage.id}")
 
-		metaPath = os.path.join(instance.workspace, "%s.json" % platform.name)
-		verbose("Writing image metadata as %s" % metaPath)
-		with open(metaPath, "w") as f:
-			json.dump(meta, f, indent = 4)
+		# Inside the platform {} decl, create backend specific info:
+		#	backend podman {
+		#		image "leap-15.4-container-fips-twopence:version";
+		#	}
+		platform.addBackend(self.name, image = outputName)
 
-		# Copy the json file from workspace to ~/.twopence/data/podman/
-		return platform.saveImage("podman", metaPath)
+		# Clear any cached image listing
+		self.listing = None
 
 	def packageInstance(self, instance, packageName):
 		assert(instance.config.buildResult)
@@ -626,18 +645,9 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 		platform.name = packageName
 		platform.build_time = time.strftime("%Y-%m-%d %H:%M:%S GMT", time.gmtime())
 
-		imagePath = self.saveInstanceImage(instance, platform)
-		metaPath = self.saveInstanceMeta(instance, platform, imagePath)
-
-		# Inside the platform {} decl, create backend specific info:
-		#	backend podman {
-		#		image "blah";
-		#		url "~/.twopence/data/blah.box";
-		#	}
-		platform.addBackend(self.name, image = platform.name, url = metaPath)
+		self.saveInstanceImage(instance, platform)
 
 		platform.finalize()
-
 		platform.save()
 		return True
 
@@ -659,33 +669,13 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 		listing = PodmanImageListing()
 		for entry in data:
 			config = listing.create(entry)
-			continue
-
-			print(entry["Names"])
-
-			registry = None
-			names = []
-
-			for _ in entry["Names"]:
-				r, n = _.split('/', maxsplit = 1)
-				if registry is None:
-					registry = r
-				elif registry != r:
-					raise ValueError(f"container image specifies names w/ conflicting registries")
-
-				if n.endswith(':latest'):
-					n = n[:-7]
-
-				names.append(n)
-
-			labels = entry["Labels"]
-			version = labels.get('org.opencontainers.image.version')
-
-			image = listing.create(registry, names, version)
-			# print(f"Found image {image}")
 
 		self.listing = listing
 		return listing
+
+	def findImage(self, searchKey):
+		debug(f"Looking for {searchKey} in local image store")
+		return self.listImages().find(searchKey)
 
 	@property
 	def network(self):
@@ -746,7 +736,7 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 
 		cmd = f"sudo podman pull {image}"
 		if not self.runShellCmd(cmd, timeout = 60):
-			raise ValueError("Failed to add box %s from %s" % (box.name, box.url))
+			raise ValueError("Failed to pull image {image}")
 
 		# Clear any cached listing
 		self.listing = None
@@ -759,15 +749,8 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 		if not id:
 			return None
 
-		for i in range(retries):
-			command = f"podman {subcommand} {id}"
-			status = self.runShellCmd(command, cwd = instance.workspace, **kwargs)
-			if status:
-				break
-
-			verbose("podman %s failed, retrying" % subcommand)
-
-		return status
+		command = f"sudo podman {subcommand} {id}"
+		return self.runShellCmd(command, **kwargs)
 
 	def runShellCmd(self, *args, **kwargs):
 		return self.runner.run(*args, **kwargs)

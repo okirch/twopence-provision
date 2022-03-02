@@ -38,7 +38,7 @@ class LoginError(Exception):
 # This is used to query a registry for an image
 class ImageReference:
 	def __init__(self, registry, name, architecture = 'amd64', url = None):
-		self.registry = registry
+		self.registry = registry or "localhost"
 		if ':' in name:
 			name, tag = name.rsplit(':', maxsplit = 1)
 		else:
@@ -180,10 +180,14 @@ class ImageConfig(object):
 		self._config = config
 		self.other = other
 
-	def _get(self, key, defaultValue):
+	def _get(self, key, defaultValue = None):
 		if not self._config:
 			return defaultValue
-		return self._config.get(key) or defaultValue
+		return self._config.get(key, defaultValue)
+
+	@property
+	def id(self):
+		return self._get('Id')
 
 	@property
 	def labels(self):
@@ -1755,6 +1759,9 @@ class ContainerStatus(object):
 		if not self._data:
 			return defaultValue
 		return self._data.get(key) or defaultValue
+
+	def __str__(self):
+		return f"container {self.id} state {self.state}"
 
 	@property
 	def id(self):
