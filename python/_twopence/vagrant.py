@@ -467,14 +467,11 @@ class VagrantBackend(Backend):
 		# "libvirt" is the name of the provider.
 		# If any of these change, the following will fail.
 		keyPath = instance.workspacePath(".vagrant/machines/default/libvirt/private_key")
-		print(f"Checking for presence of {keyPath}")
 		if os.path.exists(keyPath):
 			info("Vagrant created a new key for this instance - capturing it")
-			instance.config.captureKey(keyPath)
+			instance.keyfile = keyPath
 
 		instance.recordStartTime(when)
-		instance.recordKeyfile(instance.config.keyfile)
-
 		return True
 
 	def updateInstanceTarget(self, instance):
@@ -597,9 +594,19 @@ class VagrantBackend(Backend):
 		platform.addBackend(self.name, image = platform.name, url = metaPath)
 
 		platform.finalize()
-
 		platform.save()
 		return True
+
+	def packageInstance2(self, instance, platform):
+		imagePath = self.saveInstanceImage(instance, platform)
+		metaPath = self.saveInstanceMeta(instance, platform, imagePath)
+
+		# Inside the platform {} decl, create backend specific info:
+		#	backend vagrant {
+		#		image "blah";
+		#		url "~/.twopence/data/blah.box";
+		#	}
+		platform.addBackend(self.name, image = platform.name, url = metaPath)
 
 	##################################################################
 	# List the available boxes. Output looks like this:

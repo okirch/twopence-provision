@@ -651,6 +651,9 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 		platform.save()
 		return True
 
+	def packageInstance2(self, instance, platform):
+		self.saveInstanceImage(instance, platform)
+
 	##################################################################
 	# List the available boxes using podman images
 	##################################################################

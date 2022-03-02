@@ -98,22 +98,60 @@ class GenericInstance:
 		return None
 
 	def recordStartTime(self, when):
-		if self.persistent is None:
-			return
-
-		self.persistent.set_value("start-time", when)
+		if self.persistent:
+			self.persistent.set_value("start-time", when)
 
 	def recordKeyfile(self, path):
-		if self.persistent is None:
+		if self.persistent:
+			self.persistent.keyfile = path
+
+	def _getPersistent(self, name):
+		if self.persistent:
+			return self.persistent.get_value(name)
+
+	def _setPersistent(self, name, value):
+		if self.persistent:
+			self.persistent.set_value(name, value)
+
+	@property
+	def keyfile(self):
+		if self.persistent:
+			return self.persistent.keyfile
+
+	@keyfile.setter
+	def keyfile(self, value):
+		if self.persistent:
+			self.persistent.keyfile = value
+
+	def maybeSaveKey(self, platform):
+		savedPath = self.keyfile
+		if savedPath is None:
 			return
 
-		self.persistent.set_value("keyfile", path)
+		info("Provisioned a new key for this instance - capturing it")
+		with open(savedPath, "rb") as f:
+			rawKey = f.read()
+			platform.saveKey(rawKey)
+
+	def createBuildResult(self, packageName):
+		if not self.config or not self.config.buildResult:
+			return None
+
+		platform = self.config.buildResult
+		platform.name = packageName
+		platform.build_time = time.strftime("%Y-%m-%d %H:%M:%S GMT", time.gmtime())
+
+		keyfile = self.keyfile
+		if keyfile is not None:
+			with open(keyfile, "rb") as f:
+				rawKey = f.read()
+				platform.saveKey(rawKey)
+
+		return platform
 
 	def recordTarget(self, target):
-		if self.persistent is None:
-			return
-
-		self.persistent.set_value("target", target)
+		if self.persistent:
+			self.persistent.set_value("target", target)
 
 	def saveLog(self, filename, buffer):
 		with self.openLog(filename) as f:

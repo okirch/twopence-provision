@@ -104,6 +104,12 @@ class TopologyStatus:
 		def keyfile(self):
 			return self._keyfile
 
+		@keyfile.setter
+		def keyfile(self, value):
+			if self._keyfile != value:
+				self._config.set_value("keyfile", value)
+				self._keyfile = value
+
 		def clearNetwork(self):
 			self.ipv4_address = None
 			self.ipv6_address = None
@@ -444,9 +450,19 @@ class TestTopology:
 	def package(self, nodeName, packageName):
 		instance = self.getInstance(nodeName)
 		if instance is None:
-			raise ValueError("Cannot package %s: instance not found" % nodeName)
+			raise ValueError(f"Cannot package {nodeName}: instance not found")
 
-		return self.backend.packageInstance(instance, packageName)
+		platform = instance.createBuildResult(packageName)
+		if platform is None:
+			raise ValueError(f"Cannot package {nodeName}: couldn't create build-result platform")
+
+		self.backend.packageInstance2(instance, platform)
+
+		# FIXME: finalize is currently a no-op
+		platform.finalize()
+		platform.save()
+
+		return platform
 
 	def destroy(self):
 		for instance in self.instances:
