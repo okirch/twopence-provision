@@ -333,6 +333,31 @@ class ActionCreate(Action):
 		topology = self.createTopology(purpose = "testing")
 		self.provisionTopology(topology)
 
+class ActionPackage(Action):
+	def __init__(self, args):
+		super().__init__(args)
+
+		if not args.target:
+			twopence.fatal("Missing argument: name of target build")
+		self.target = args.target
+
+	def perform(self):
+		topology = self.createTopology(purpose = "destroy")
+		if not topology.detect():
+			twopence.fatal("No nodes found - I can't package thin air")
+
+		if len(topology.instances) != 1:
+			twopence.fatal(f"I can only package a single node, not {len(topology.instances)}")
+		buildNode = topology.instances[0]
+
+		print(f"Found build instance {buildNode.name}, will be packaged as {self.target}")
+
+		self.shutdownTopology(topology)
+
+		# Now package up the image and all the ancillary information, like
+		# ssh keys and the platform .config file describing the result.
+		topology.package(buildNode.name, self.target)
+
 class ActionDestroy(Action):
 	def __init__(self, args):
 		super().__init__(args)
@@ -641,6 +666,11 @@ def build_arg_parser():
 	sp.set_defaults(action = ActionCreate)
 	sp.add_argument('--auto-destroy', default = False, action = 'store_true',
 			help = 'if one or more of the requested nodes are running, destroy them')
+
+	sp = sub.add_parser('package', help = 'Shutdown the running topology and package it as a new twopence platform')
+	sp.set_defaults(action = ActionPackage)
+	sp.add_argument('target', metavar='TARGET', nargs='?',
+			help = 'name of the target image to be built')
 
 	sp = sub.add_parser('destroy', help = 'Destroy the topology')
 	sp.set_defaults(action = ActionDestroy)
