@@ -271,59 +271,6 @@ class ActionInit(Action):
 
 		return
 
-class ActionBuild(Action):
-	def __init__(self, args):
-		super().__init__(args)
-
-		self.auto_destroy = args.auto_destroy
-		if not args.target:
-			self.fatal("Missing argument: name of target build")
-		self.target = args.target
-
-	def displayBuildOrPlatform(self, desc, p, indent = ""):
-		print("%s%s = %s" % (indent, desc, p))
-
-		indent += "  "
-		for stage in p.stages.values():
-			print("%sStage %s%s" % (indent, stage.name, stage.reboot and " (reboot)" or ""))
-			for script in stage.run:
-				print("%s  run %s" % (indent, script))
-
-	def perform(self):
-		bom = self.bom
-
-		config = self.loadConfig(purpose = None)
-
-		buildNode = config.getNode("build")
-		if buildNode is None:
-			raise ValueError("Misconfigured system - build node is not defined")
-
-		if buildNode.platform is None:
-			raise ValueError("Bad build config - no platform defined")
-		base_platform = config.getPlatform(buildNode.platform)
-
-		if False:
-			self.displayBuildOrPlatform("base platform", base_platform)
-			for name in buildNode.features:
-				self.displayBuildOrPlatform("build", config.getBuild(name))
-
-		config.validate(purpose = "building")
-
-		topology = TestTopology(self.backend, config = config, workspace = self.workspace)
-
-		# This provisions the build node - and with that, we're already done,
-		# so we can take it down right away.
-		# A nicer approach would be to separate the build steps from actual
-		# provisioning steps, but that's for the future.
-		self.provisionTopology(topology)
-		self.shutdownTopology(topology)
-
-		# Now package up the image and all the ancillary information, like
-		# ssh keys and the platform .config file describing the result.
-		topology.package(buildNode.name, self.target)
-
-		self.destroyTopology(topology)
-
 class ActionCreate(Action):
 	def __init__(self, args):
 		super().__init__(args)
@@ -654,13 +601,6 @@ def build_arg_parser():
 			help = 'the provisioning backend to use [vagrant]')
 	sp.add_argument('--logspace',
 			help = 'the default location for test runs to write their log files to')
-
-	sp = sub.add_parser('build', help = 'Build a silver image')
-	sp.set_defaults(action = ActionBuild)
-	sp.add_argument('--auto-destroy', default = False, action = 'store_true',
-			help = 'if one or more of the requested nodes are running, destroy them')
-	sp.add_argument('target', metavar='TARGET', nargs='?',
-			help = 'name of the target image to be built')
 
 	sp = sub.add_parser('create', help = 'Create the requested nodes')
 	sp.set_defaults(action = ActionCreate)

@@ -1514,9 +1514,6 @@ class Config(Configurable):
 				raise ConfigError("no testcase name configured")
 			if not self.nodes:
 				raise ConfigError("no nodes configured")
-		elif purpose == "building":
-			if not self.builds:
-				raise ConfigError("no builds configured")
 
 		if self._valid:
 			return
