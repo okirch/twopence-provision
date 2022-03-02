@@ -39,3 +39,14 @@ def locatePlatformFiles():
 
 	for pi in config.locatePlatformFiles():
 		yield pi
+
+def locatePlatformsForOS(os, backend, architecture = None):
+	config = __buildDummyConfig()
+
+	for platform in config.locatePlatformsForOS(os, backend, architecture):
+		yield platform
+
+def locateBasePlatformForOS(os, backend, architecture = None):
+	config = __buildDummyConfig()
+
+	return config.locateBasePlatformForOS(os, backend, architecture)

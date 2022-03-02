@@ -14,6 +14,7 @@ import time
 from .config import ConfigError
 from .instance import *
 from .logging import *
+from .config import Config
 
 class TopologyStatus:
 	class NodeStatus:

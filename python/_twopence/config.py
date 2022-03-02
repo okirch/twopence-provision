@@ -345,7 +345,7 @@ class Configurable(object):
 				info.initialize(self)
 
 	def configureFromPath(self, path):
-		debug("Loading %s" % path)
+		debug_extra(f"Loading {path}")
 		config = curly.Config(path)
 		self.configure(config.tree())
 
@@ -477,6 +477,8 @@ class ConfigOpaque(NamedConfigurable):
 
 	# merge methods
 	def mergeNoOverride(self, other):
+		if self is other:
+			return
 		result = copy.copy(other.data)
 		result.update(self.data)
 		self.data = result
@@ -922,9 +924,6 @@ class Platform(NamedConfigurable):
 
 		self.base_platforms = None
 
-		# used during build, exclusively
-		self._raw_key = None
-
 	def getRepository(self, name):
 		return self.repositories.get(name)
 
@@ -954,15 +953,13 @@ class Platform(NamedConfigurable):
 		saved = self.backends.create(name)
 		saved.data.update(kwargs)
 
+	# FIXME obsolete?
 	def hasBackend(self, name):
 		return self.backends.get(name) is not None
 
+	# FIXME obsolete
 	def finalize(self):
-		if not self.keyfile and self._raw_key:
-			self.saveKey(self._raw_key)
-
-		if not self.keyfile:
-			verbose("WARNING: backend did not capture an ssh key for %s" % self.name)
+		pass
 
 	def save(self):
 		new_config = curly.Config()
@@ -1015,9 +1012,6 @@ class Platform(NamedConfigurable):
 
 		return result
 
-	def setRawKey(self, keyData):
-		self._raw_key = keyData
-
 	def saveKey(self, keyData):
 		keyfile = "%s.key" % self.name
 		keypath = os.path.join(self.datadir, keyfile)
@@ -1053,15 +1047,26 @@ class Platform(NamedConfigurable):
 	#			}
 	#		}
 	#	}
-	def resolveImage(self, config, backend, base_os = None, arch = None):
+	def resolveImage(self, backend, base_os = None, arch = None):
+		buildConfig = self.findValidImageConfig(backend, base_os, arch)
+		if buildConfig is not None:
+			self.backends.mergeItem(buildConfig)
+			self.arch = arch or os.uname().machine
+		return buildConfig
+
+	def hasImageFor(self, backend, arch = None):
+		return self.findValidImageConfig(backend, None, arch)
+
+	def findValidImageConfig(self, backend, base_os = None, arch = None):
+		# debug(f"{self.name}: find image for backend {backend}, arch {arch}, baseOS {base_os}")
 		assert(type(backend) == str)
 
-		backendConfig = self.backends.get(backend)
-		if backendConfig and backendConfig.get_value("image") is not None:
-			return True
+		buildConfig = self.backends.get(backend)
+		if buildConfig and buildConfig.get_value("image") is not None:
+			return buildConfig
 
 		if not self.imagesets:
-			return False
+			return None
 
 		if arch is None:
 			arch = os.uname().machine
@@ -1075,24 +1080,19 @@ class Platform(NamedConfigurable):
 			if not arch_specific:
 				continue
 
-			build_config = arch_specific.getBackend(backend)
-			if not build_config:
+			buildConfig = arch_specific.getBackend(backend)
+			if not buildConfig:
 				continue
 
 			if found:
-				verbose("Found more than one matching image in base platform %s" % self)
-				return False
+				error(f"Found more than one matching image in base platform {self}")
+				return None
 
-			found = imageSet
+			found = buildConfig
 
 		if found is None:
-			verbose("No matching image in platform %s" % self)
-			return False
-
-		self.backends.mergeItem(build_config)
-
-		self.arch = arch
-		return True
+			debug(f"  no image matching {backend} and {arch}")
+		return found
 
 	def resolveBasePlatforms(self, config):
 		if self.base_platforms is not None:
@@ -1105,7 +1105,9 @@ class Platform(NamedConfigurable):
 				raise ConfigError("Cannot find base platform \"%s\" of platform \"%s\"" % (name, self.name))
 
 			self.base_platforms.append(base)
+			self.features += base.features
 
+		# print(f"platform {self.name} has features {self.features}")
 		return self.base_platforms
 
 class Role(NamedConfigurable):
@@ -1455,22 +1457,6 @@ class FinalNodeConfig(EmptyNodeConfig):
 		for stage in self.stages:
 			print("   stage %s" % stage)
 
-	# Called from the backend when it detects a new private key
-	# during provisioning.
-	# Currently, only used while building a new silver image, in
-	# which case we push the raw key to the buildResult,
-	# which stores its binary data in some attribute.
-	#
-	# Later, during save(), it writes out the actual raw data.
-	def captureKey(self, path):
-		# If we're not building anything, there's no point in
-		# capturing the ssh key
-		if self.buildResult is None:
-			return
-
-		with open(path, "rb") as f:
-			self.buildResult.setRawKey(f.read())
-
 class Config(Configurable):
 	_default_config_dirs = [
 		twopence.global_config_dir,
@@ -1556,6 +1542,39 @@ class Config(Configurable):
 						continue
 
 					yield self.PlatformInfo(de.path)
+
+	def locatePlatformsForOS(self, requestedOS, backend, architecture, dirs = None):
+		if dirs is None:
+			dirs = self._user_config_dirs + Config._default_config_dirs
+
+		for basedir in dirs:
+			path = os.path.join(basedir, "platform.d")
+			if not os.path.isdir(path):
+				continue
+
+			for de in os.scandir(path):
+				if not de.is_file() or not de.name.endswith(".conf"):
+					continue
+
+				pi = self.PlatformInfo(de.path)
+				for platform in pi.platforms:
+					if platform.os == requestedOS and \
+					   platform.hasImageFor(backend, architecture):
+						yield platform
+
+	# Find the "original" platform that provides an image for the requested OS/backend/architecture,
+	# ie the one that does not derive from some other platform providing the same OS.
+	def locateBasePlatformForOS(self, requestedOS, backend, architecture):
+		basePlatform = None
+		for platform in self.locatePlatformsForOS(requestedOS, backend, architecture, dirs = Config._default_config_dirs):
+			if basePlatform is None:
+				basePlatform = platform
+			elif len(platform.features) > len(basePlatform.features):
+				basePlatform = platform
+
+		if basePlatform:
+			basePlatform.resolveBasePlatforms(self)
+		return basePlatform
 
 	def load(self, filename):
 		filename = self.locateConfig(filename)
@@ -1667,7 +1686,7 @@ class Config(Configurable):
 		roles = self.rolesForNode(node)
 
 		platform = self.platformForNode(node, roles)
-		if not platform.resolveImage(self, backend.name):
+		if not platform.resolveImage(backend.name):
 			raise ConfigError(f"Unable to determine {backend.name} image for node {node.name}")
 
 		if not platform.vendor or not platform.os:
