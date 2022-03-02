@@ -451,15 +451,6 @@ class VagrantBackend(Backend):
 		import re
 
 		for line in status.output:
-			if "generated public key" in line:
-				verbose("Vagrant created a new key for this instance - capturing it")
-				path = os.path.join(instance.workspace, ".vagrant/machines/default/libvirt/private_key")
-				if os.path.exists(path):
-					instance.config.captureKey(path)
-				else:
-					debug("%s does not exist" % path)
-				continue
-
 			if "SSH address" not in line:
 				continue
 
@@ -471,6 +462,15 @@ class VagrantBackend(Backend):
 			else:
 				print("Bad: unable to parse address in output of \"vagrant up\"")
 				print("  ->> %s" % line.strip())
+
+		# "default" is the name of the VM according to our Vagrantfile;
+		# "libvirt" is the name of the provider.
+		# If any of these change, the following will fail.
+		keyPath = instance.workspacePath(".vagrant/machines/default/libvirt/private_key")
+		print(f"Checking for presence of {keyPath}")
+		if os.path.exists(keyPath):
+			info("Vagrant created a new key for this instance - capturing it")
+			instance.config.captureKey(keyPath)
 
 		instance.recordStartTime(when)
 		instance.recordKeyfile(instance.config.keyfile)
