@@ -203,6 +203,20 @@ class ListAttributeSchema(AttributeSchema):
 			assert(type(current) == list)
 			setattr(obj, self.name, current + values)
 
+class SetAttributeSchema(AttributeSchema):
+	default_value = set()
+
+	def update(self, obj, attr):
+		# attr.values may return None or []
+		values = attr.values
+		if values:
+			if self.typeconv:
+				values = [self.typeconv.from_string(_) for _ in values]
+
+			current = getattr(obj, self.name)
+			assert(type(current) == set)
+			setattr(obj, self.name, current.union(set(values)))
+
 ##################################################################
 # Define correspondence between nodes in a curly file, and
 # objects in python
@@ -489,6 +503,30 @@ class ConfigOpaque(NamedConfigurable):
 
 	def __iter__(self):
 		return iter([])
+
+class Compatibility(NamedConfigurable):
+	info_attrs = ['requires', 'conflicts']
+
+	schema = [
+		SetAttributeSchema('requires'),
+		SetAttributeSchema('conflicts'),
+	]
+
+	def check(self, values, name, category):
+		okay = True
+
+		conflict = self.conflicts.intersection(values)
+		if conflict:
+			error(f"{name} conflicts with {category}s " + ", ".join(conflict))
+			okay = False
+
+		require = self.requires.difference(values)
+		if require:
+			error(f"{name} requires missing {category}s " + ", ".join(require))
+			okay = False
+
+		return okay
+
 
 #
 # A platform definition can describe requirements (such as an activation regcode).
@@ -1104,6 +1142,7 @@ class Build(Platform):
 	schema = Platform.schema + [
 		StringAttributeSchema('base_platform', key = 'base-platform'),
 		ListAttributeSchema('_base_builds', 'use-base-builds'),
+		DictNodeSchema('_compatibility', 'compatibility', itemClass = Compatibility),
 		# obsolete:
 		StringAttributeSchema('template'),
 	]
@@ -1114,7 +1153,7 @@ class Build(Platform):
 
 	def resolveBaseBuilds(self, config):
 		if self.base_builds is not None:
-			return
+			return self.base_builds
 
 		self.base_builds = []
 		for name in self._base_builds:
@@ -1126,6 +1165,21 @@ class Build(Platform):
 
 		return self.base_builds
 
+	def compatibleWithPlatform(self, platform):
+		return self.checkPlatformFeatures(set(platform.features))
+
+	def checkPlatformFeatures(self, featureSet):
+		okay = True
+
+		compatibility = self._compatibility.get('features')
+		if compatibility and not compatibility.check(featureSet, self.name, "platform feature"):
+			okay = False
+
+		for baseBuild in self.base_builds:
+			if not baseBuild.checkPlatformFeatures(featureSet):
+				okay = False
+
+		return okay
 
 class EmptyNodeConfig:
 	def __init__(self, name):
@@ -1330,7 +1384,10 @@ class FinalNodeConfig(EmptyNodeConfig):
 		for name in self.requestedBuildOptions:
 			build = config.getBuild(name)
 			if build is None:
-				raise ConfigError(f"Node {self.name} wants to use feature {name}, but I can't find it")
+				raise ConfigError(f"Node {self.name} wants to provision {name}, but I don't know how")
+
+			if not build.compatibleWithPlatform(self.platform):
+				raise ConfigError(f"Node {self.name} wants to provision {name}, but the option is not compatible with the chosen platform")
 
 			self.mergePlatformOrBuild(build)
 			self.buildResult.features += build.features
