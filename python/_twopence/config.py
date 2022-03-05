@@ -552,7 +552,6 @@ class ConfigFacade:
 	def initFacadeClass(cls):
 		if not cls.initialized:
 			assert(cls.facadedClass)
-			print(cls.facadedClass)
 			assert(issubclass(cls.facadedClass, Configurable))
 			cls.facadedClass.buildFacade(cls)
 
