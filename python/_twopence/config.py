@@ -161,6 +161,13 @@ class AttributeSchema(Schema):
 			Schema.debug("   %s = %s" % (self.key, value))
 			config.set_value(self.key, value)
 
+	def _facadeGetter(self, object):
+		return getattr(object._backingObject, self.name, self.default_value)
+
+	def _facadeSetter(self, object, value):
+		# print(f"_facadeSetter({self.name}, {object._backingObject}, {value})")
+		setattr(object._backingObject, self.name, value)
+
 class ScalarAttributeSchema(AttributeSchema):
 	def update(self, obj, attr):
 		value = attr.value
@@ -261,6 +268,18 @@ class NodeSchema(Schema):
 		for item in container.values():
 			child = node.add_child(self.key, item.name)
 			item.publish(child)
+
+	def _facadeGetter(self, object):
+		object = object._backingObject
+		if not hasattr(object, self.name):
+			return self.containerClass()
+		return getattr(object, self.name)
+
+	def _facadeSetter(self, object, value):
+		# print(f"_facadeSetter({self.name}, {object._backingObject}, {value})")
+		object = object._backingObject
+		assert(isinstance(value, self.containerClass))
+		setattr(object, self.name, value)
 
 class DictNodeSchema(NodeSchema):
 	def __init__(self, name, key = None, containerClass = None, itemClass = None):
@@ -378,6 +397,12 @@ class Configurable(object):
 			Schema.debug(f"{info}.publish({self})")
 			info.publish(self, config)
 		return
+
+	@classmethod
+	def buildFacade(cls, facade):
+		for info in cls.schema:
+			prop = property(info._facadeGetter, info._facadeSetter)
+			setattr(facade, info.name, prop)
 
 	def merge(self, other):
 		raise NotImplementedError()
@@ -505,6 +530,42 @@ class ConfigOpaque(NamedConfigurable):
 
 	def __iter__(self):
 		return iter([])
+
+# This provides a Facade class that is easy to set up
+#
+# class DataFacade(ConfigFacade):
+#	facadedClass = Data
+#
+# This will inspect the schema of class Data and set up getters and
+# setters
+class ConfigFacade:
+	initialized = False
+
+	def __init__(self, *args, backingObject = None, **kwargs):
+		self.initFacadeClass()
+
+		if backingObject is None:
+			backingObject = self.__class__.facadedClass(*args, **kwargs)
+		self._backingObject = backingObject
+
+	@classmethod
+	def initFacadeClass(cls):
+		if not cls.initialized:
+			assert(cls.facadedClass)
+			print(cls.facadedClass)
+			assert(issubclass(cls.facadedClass, Configurable))
+			cls.facadedClass.buildFacade(cls)
+
+			cls.initialized = True
+
+	@staticmethod
+	def _getFacadedAttr(name, obj):
+		return getattr(obj._backingObject, name, None)
+
+	@staticmethod
+	def _setFacadedAttr(name, obj, value):
+		return setattr(obj._backingObject, name, value)
+
 
 class Compatibility(NamedConfigurable):
 	info_attrs = ['requires', 'conflicts']
