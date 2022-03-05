@@ -577,26 +577,6 @@ class VagrantBackend(Backend):
 		# Copy the json file from workspace to ~/.twopence/data/vagrant/
 		return platform.saveImage("vagrant", metaPath)
 
-	def packageInstance(self, instance, packageName):
-		assert(instance.config.buildResult)
-		platform = instance.config.buildResult
-		platform.name = packageName
-		platform.build_time = time.strftime("%Y-%m-%d %H:%M:%S GMT", time.gmtime())
-
-		imagePath = self.saveInstanceImage(instance, platform)
-		metaPath = self.saveInstanceMeta(instance, platform, imagePath)
-
-		# Inside the platform {} decl, create backend specific info:
-		#	backend vagrant {
-		#		image "blah";
-		#		url "~/.twopence/data/blah.box";
-		#	}
-		platform.addBackend(self.name, image = platform.name, url = metaPath)
-
-		platform.finalize()
-		platform.save()
-		return True
-
 	def packageInstance2(self, instance, platform):
 		imagePath = self.saveInstanceImage(instance, platform)
 		metaPath = self.saveInstanceMeta(instance, platform, imagePath)

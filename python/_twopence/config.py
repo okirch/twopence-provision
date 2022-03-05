@@ -1066,19 +1066,6 @@ class Platform(NamedConfigurable):
 			os.makedirs(path)
 		return path
 
-	def describeBuildResult(self, name = None):
-		if name is None:
-			name = self.name
-
-		result = Platform(name)
-		result.vendor = self.vendor
-		result.os = self.os
-		result.features = self.features
-		result.resources = self.resources
-		result.repositories = self.repositories
-
-		return result
-
 	def saveKey(self, keyData):
 		keyfile = "%s.key" % self.name
 		keypath = os.path.join(self.datadir, keyfile)

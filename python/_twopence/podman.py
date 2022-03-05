@@ -639,18 +639,6 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 		# Clear any cached image listing
 		self.listing = None
 
-	def packageInstance(self, instance, packageName):
-		assert(instance.config.buildResult)
-		platform = instance.config.buildResult
-		platform.name = packageName
-		platform.build_time = time.strftime("%Y-%m-%d %H:%M:%S GMT", time.gmtime())
-
-		self.saveInstanceImage(instance, platform)
-
-		platform.finalize()
-		platform.save()
-		return True
-
 	def packageInstance2(self, instance, platform):
 		self.saveInstanceImage(instance, platform)
 
