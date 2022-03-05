@@ -6,7 +6,7 @@
 #
 ##################################################################
 
-from twopence import logger, debug, verbose, info, warn, error
+from twopence import logger, debug, debug_extra, verbose, info, warn, error
 
 def setVerbosity(num):
 	global opt_verbose
