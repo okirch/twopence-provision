@@ -278,7 +278,7 @@ class ListNodeSchema(NodeSchema):
 		super().__init__(name, key, containerClass)
 
 	def create(self, name):
-		return ConfigRequirement.Item(name)
+		return self.containerClass(name)
 
 class ParameterNodeSchema(NodeSchema):
 	def __init__(self, name, key = None):
