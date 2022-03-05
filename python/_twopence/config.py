@@ -388,6 +388,13 @@ class Configurable(object):
 				raise KeyError("Unknown configuration key %s in node %s" % (child.type, config))
 			info.update(self, child)
 
+	def publishToPath(self, path):
+		debug_extra(f"Saving {self} to {path}")
+
+		new_config = curly.Config()
+		self.publish(new_config.tree())
+		new_config.save(path)
+
 	def publish(self, config):
 		assert(self.schema)
 
