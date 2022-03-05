@@ -71,22 +71,12 @@ class TypeConversionBool(TypeConversion):
 # and a python object's members
 ##################################################################
 class Schema(object):
-	debug_init_enabled = False
-	debug_enabled = False
+	debug = logger.createExtraDebugFacility()
+	debug_init = logger.createExtraDebugFacility()
 
 	def __init__(self, name, key):
 		self.name = name
 		self.key = key or name
-
-	@classmethod
-	def debug_init(klass, msg):
-		if klass.debug_init_enabled:
-			print(f"DEBUG: {msg}")
-
-	@classmethod
-	def debug(klass, msg):
-		if klass.debug_enabled:
-			print(f"DEBUG: {msg}")
 
 	@staticmethod
 	def initializeAll(ctx):

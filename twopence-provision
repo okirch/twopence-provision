@@ -590,6 +590,8 @@ def build_arg_parser():
 			    help = 'path to the file to store status info [default $workspace/status.conf]')
 	parser.add_argument('--debug', default = False, action = 'store_true',
 			    help = 'Enable debug output')
+	parser.add_argument('--debug-schema', default = False, action = 'store_true',
+			    help = 'Enable debugging for config schema')
 
 	sub = parser.add_subparsers(dest = 'command')
 
@@ -643,6 +645,11 @@ def build_arg_parser():
 
 parser = build_arg_parser()
 args = parser.parse_args()
+
+if args.debug_schema:
+	from twopence.provision.config import Schema
+	Schema.debug.enabled = True
+	args.debug = True
 
 if args.debug:
 	logger.enableLogLevel('debug')
