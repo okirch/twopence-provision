@@ -211,7 +211,7 @@ class TestTopology(PersistentTestTopology):
 		if platform is None:
 			raise ValueError(f"Cannot package {nodeName}: couldn't create build-result platform")
 
-		self.backend.packageInstance2(instance, platform)
+		self.backend.packageInstance(instance, platform)
 
 		# FIXME: finalize is currently a no-op
 		platform.finalize()

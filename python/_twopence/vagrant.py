@@ -577,7 +577,7 @@ class VagrantBackend(Backend):
 		# Copy the json file from workspace to ~/.twopence/data/vagrant/
 		return platform.saveImage("vagrant", metaPath)
 
-	def packageInstance2(self, instance, platform):
+	def packageInstance(self, instance, platform):
 		imagePath = self.saveInstanceImage(instance, platform)
 		metaPath = self.saveInstanceMeta(instance, platform, imagePath)
 

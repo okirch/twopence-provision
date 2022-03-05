@@ -639,7 +639,7 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 		# Clear any cached image listing
 		self.listing = None
 
-	def packageInstance2(self, instance, platform):
+	def packageInstance(self, instance, platform):
 		self.saveInstanceImage(instance, platform)
 
 	##################################################################
