@@ -471,7 +471,7 @@ class VagrantBackend(Backend):
 			info("Vagrant created a new key for this instance - capturing it")
 			instance.keyfile = keyPath
 
-		instance.recordStartTime(when)
+		instance.start_time = when
 		return True
 
 	def updateInstanceTarget(self, instance):
@@ -523,7 +523,7 @@ class VagrantBackend(Backend):
 			print("%s: vagrant halt failed to stop VM" % instance.name)
 			return False
 
-		instance.recordStartTime(None)
+		instance.start_time = None
 		return True
 
 	def destroyInstance(self, instance):

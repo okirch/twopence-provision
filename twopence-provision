@@ -12,7 +12,7 @@ import os
 import twopence
 
 from twopence.provision import *
-from twopence.provision.topology import TopologyStatus
+from twopence.provision.persist import TopologyStatus
 
 class BasicAction(object):
 	def __init__(self, args):

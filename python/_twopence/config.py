@@ -14,7 +14,6 @@ import shutil
 import copy
 import twopence
 
-from .instance import *
 from .logging import *
 from .provision import ProvisioningScriptCollection, ProvisioningShellEnvironment, ProvisioningFile
 
@@ -1314,13 +1313,6 @@ class EmptyNodeConfig:
 		self.start += role.start
 		self.features += role.features
 		self.requestedBuildOptions += role.build
-
-	def persistInfo(self, nodePersist):
-		nodePersist.features = self.features
-		nodePersist.resources = self.resources
-		if self.platform:
-			nodePersist.vendor = self.platform.vendor
-			nodePersist.os = self.platform.os
 
 	def configureBackend(self, backendName, backendNode):
 		config = self.platform.backends.get(backendName)

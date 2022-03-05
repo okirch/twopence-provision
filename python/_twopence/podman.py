@@ -535,7 +535,7 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 			print(f"Cannot start instance {instance.name} - podman up failed ({status})")
 			return False
 
-		instance.recordStartTime(when)
+		instance.start_time = when
 		return True
 
 	def updateInstanceTarget(self, instance):
@@ -583,7 +583,7 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 			error(f"{instance.name}: podman failed to stop container")
 			return False
 
-		instance.recordStartTime(None)
+		instance.start_time = None
 		return True
 
 	def destroyInstance(self, instance):
