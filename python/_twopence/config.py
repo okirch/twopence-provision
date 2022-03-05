@@ -147,6 +147,10 @@ class AttributeSchema(Schema):
 					value = [typeconv.to_string(_) for _ in value]
 				else:
 					value = typeconv.to_string(value)
+
+			if type(value) == set:
+				value = list(value)
+
 			Schema.debug("   %s = %s" % (self.key, value))
 			config.set_value(self.key, value)
 
@@ -957,7 +961,7 @@ class Platform(NamedConfigurable):
 		StringAttributeSchema('os'),
 		StringAttributeSchema('arch'),
 		StringAttributeSchema('image'),		# obsolete?
-		ListAttributeSchema('features'),
+		SetAttributeSchema('features'),
 		ListAttributeSchema('resources'),
 		ListAttributeSchema('requires'),
 		ListAttributeSchema('_base_platforms', 'use-base-platforms'),
@@ -1149,7 +1153,7 @@ class Platform(NamedConfigurable):
 				raise ConfigError("Cannot find base platform \"%s\" of platform \"%s\"" % (name, self.name))
 
 			self.base_platforms.append(base)
-			self.features += base.features
+			self.features.update(base.features)
 
 		# print(f"platform {self.name} has features {self.features}")
 		return self.base_platforms
@@ -1162,7 +1166,7 @@ class Role(NamedConfigurable):
 		ListAttributeSchema('repositories'),
 		ListAttributeSchema('install'),
 		ListAttributeSchema('start'),
-		ListAttributeSchema('features'),
+		SetAttributeSchema('features'),
 		ListAttributeSchema('build'),
 	]
 
@@ -1237,7 +1241,7 @@ class EmptyNodeConfig:
 		self.install = []
 		self.start = []
 		self.requires = []
-		self.features = []
+		self.features = set()
 		self.resources = []
 		self.backends = ConfigDict(ConfigOpaque)
 		self.satisfiedRequirements = None
@@ -1288,7 +1292,7 @@ class EmptyNodeConfig:
 
 		self.install += role.install
 		self.start += role.start
-		self.features += role.features
+		self.features.update(role.features)
 		self.requestedBuildOptions += role.build
 
 	def configureBackend(self, backendName, backendNode):
@@ -1429,7 +1433,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 				raise ConfigError(f"Node {self.name} wants to provision {name}, but the option is not compatible with the chosen platform")
 
 			self.mergePlatformOrBuild(build)
-			self.buildResult.features += build.features
+			self.buildResult.features.update(build.features)
 			self.buildResult.resources += build.resources
 
 			# override any backend specific settings from the build
@@ -1444,7 +1448,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 			for base in p.base_builds:
 				self.mergePlatformOrBuild(base)
 
-		self.features += p.features
+		self.features.update(p.features)
 		self.resources += p.resources
 		self.install += p.install
 		self.start += p.start
@@ -1480,6 +1484,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 		result.vendor = base.vendor
 		result.os = base.os
 		result._base_platforms.insert(0, base.name)
+		result.features.update(self.features)
 
 		self.buildResult = result
 		return result
@@ -1804,7 +1809,7 @@ class Config(Configurable):
 		result = set()
 		for node in self.nodes:
 			platform = self.platformForNode(node)
-			result.update(set(platform.features))
+			result.update(platform.features)
 		return result
 
 ##################################################################

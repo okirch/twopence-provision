@@ -99,7 +99,7 @@ class ProvisioningShellEnvironment:
 
 		if value is None or value == []:
 			self._env.append("%s=''" % (name))
-		elif type(value) == list:
+		elif type(value) in (list, set, tuple):
 			self._env.append("%s='%s'" % (name, " ".join(value)))
 		elif type(value) in (str, bool, int):
 			self._env.append("%s='%s'" % (name, value))
@@ -153,7 +153,10 @@ class Provisioner:
 					if value is None:
 						raise ValueError("%s:%s: unknown key \"%s\"" % (templatePath, lineNumber, key))
 
-					if type(value) == list:
+					if type(value) == set:
+						value = list(value)
+
+					if type(value) in (list, tuple):
 						if len(value) == 0:
 							debug("%s:%s: key %s expands to empty list" % (templatePath, lineNumber, key))
 							value = ""

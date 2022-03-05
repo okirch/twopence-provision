@@ -32,7 +32,7 @@ def queryPlatformFeatures(platformName):
 	if platform is None:
 		return None
 
-	return set(platform.features)
+	return platform.features
 
 def locatePlatformFiles():
 	config = __buildDummyConfig()
