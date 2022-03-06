@@ -1192,8 +1192,6 @@ class Build(Platform):
 		StringAttributeSchema('base_platform', key = 'base-platform'),
 		ListAttributeSchema('_base_builds', 'use-base-builds'),
 		DictNodeSchema('_compatibility', 'compatibility', itemClass = Compatibility),
-		# obsolete:
-		StringAttributeSchema('template'),
 	]
 
 	def __init__(self, name):
@@ -1487,16 +1485,6 @@ class FinalNodeConfig(EmptyNodeConfig):
 
 		self.buildResult = result
 		return result
-
-	def display(self):
-		print("Node %s" % self.name)
-		print("  Platform   %s" % self.platform)
-		print("  Install    %s" % self.install)
-		print("  Start      %s" % self.start)
-		print("  Features   %s" % self.features)
-		print("  Requires   %s" % self.requires)
-		for stage in self.stages:
-			print("   stage %s" % stage)
 
 class Config(Configurable):
 	_default_config_dirs = [
