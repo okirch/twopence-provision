@@ -971,6 +971,7 @@ class Platform(NamedConfigurable):
 		ListAttributeSchema('_always_build', 'always-build'),
 		ListAttributeSchema('_active_repositories', 'active-repositories'),
 		ListAttributeSchema('_applied_stages', 'applied-stages'),
+		SetAttributeSchema('_applied_build_options', 'applied-build-options'),
 
 		DictNodeSchema('repositories', 'repository', itemClass = Repository),
 		DictNodeSchema('imagesets', 'imageset', itemClass = Imageset),
@@ -1004,6 +1005,10 @@ class Platform(NamedConfigurable):
 	def repositoryMarkActive(self, repo):
 		if repo.name not in self._active_repositories:
 			self._active_repositories.append(repo.name)
+
+	@property
+	def applied_build_options(self):
+		return self._applied_build_options
 
 	##########################################################
 	# The remaining methods and properties are for newly
@@ -1422,6 +1427,9 @@ class FinalNodeConfig(EmptyNodeConfig):
 
 	def resolveBuildOptions(self, config):
 		for name in self.requestedBuildOptions:
+			if name in self.platform._applied_build_options:
+				continue
+
 			build = config.getBuild(name)
 			if build is None:
 				raise ConfigError(f"Node {self.name} wants to provision {name}, but I don't know how")
@@ -1432,6 +1440,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 			self.mergePlatformOrBuild(build)
 			self.buildResult.features.update(build.features)
 			self.buildResult.resources += build.resources
+			self.buildResult._applied_build_options.add(build.name)
 
 			# override any backend specific settings from the build
 			# option
@@ -1481,6 +1490,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 		result.vendor = base.vendor
 		result.os = base.os
 		result._base_platforms.insert(0, base.name)
+		result._applied_build_options.update(base._applied_build_options)
 		result.features.update(self.features)
 
 		self.buildResult = result
