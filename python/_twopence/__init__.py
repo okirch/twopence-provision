@@ -25,14 +25,15 @@ def __buildDummyConfig():
 	config.addDirectory(twopence.user_config_dir)
 	return config
 
-def queryPlatformFeatures(platformName):
+def getPlatform(platformName):
 	config = __buildDummyConfig()
 
-	platform = config.getPlatform(platformName)
-	if platform is None:
-		return None
+	return config.getPlatform(platformName)
 
-	return platform.features
+def queryPlatformFeatures(platformName):
+	platform = getPlatform(platformName)
+	if platform is not None:
+		return platform.features
 
 def locatePlatformFiles():
 	config = __buildDummyConfig()
