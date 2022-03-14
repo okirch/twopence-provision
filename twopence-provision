@@ -464,11 +464,18 @@ class ActionPlatform(BasicAction):
 			if platform.start:
 				print("    Start svcs:     %s" % ", ".join(platform.start))
 
+			appliedOptions = platform.applied_build_options
+			if appliedOptions:
+				print("    Built with:     %s" % ", ".join(appliedOptions))
+
 			if info.builds:
 				print()
 				print("    Build options")
 			for build in info.builds:
-				print("      - %s" % build.name)
+				extra = ""
+				if build.name in appliedOptions:
+					extra = " (already applied)"
+				print(f"      - {build.name}{extra}")
 				if build.features:
 					print("        Provides:       %s" % ", ".join(build.features))
 				if build.requires:
