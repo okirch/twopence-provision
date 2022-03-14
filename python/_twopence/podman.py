@@ -102,9 +102,6 @@ class PodmanImageInfo:
 		return config
 		# return PodmanImageInfo(searchKey.registry, [image.name], config.imageVersion)
 
-class PodmanBoxMeta:
-	pass
-
 class ContainerRuntimeNetwork:
 	def __init__(self, id):
 		self.id = id
@@ -168,11 +165,11 @@ class PodmanNetwork(ContainerRuntimeNetwork):
 
 		return subnet.makeHostAddrFromSubnet(hostIndex)
 
-class PodmanImageListing:
+class ContainerImageListing:
 	def __init__(self):
 		self.images = []
 
-	def create(self, *args, **kwargs):
+	def addEntryJSON(self, *args, **kwargs):
 		image = ImageConfig(*args, **kwargs)
 		self.images.append(image)
 		return image
@@ -283,7 +280,6 @@ class PodmanBackend(Backend):
 	twopenceRepositories = []
 
 	schema = [
-		Schema.StringAttribute('template'),
 		Schema.FloatAttribute('timeout', default_value = 120),
 	]
 
@@ -303,12 +299,6 @@ class PodmanBackend(Backend):
 		self._network = None
 
 	def attachNode(self, node):
-		# detect whether the node we want to provision/build has twopence enabled. If
-		# it does, we also enable "twopence-tcp", which essentially configures
-		# the twopence test server to listen on a TCP port
-#		if 'twopence' in node.features + node.requestedBuildOptions:
-#			node.requestedBuildOptions.append('twopence-tcp')
-
 		try:
 			return node.podman
 		except:
@@ -461,6 +451,8 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 	# What we do here is copy twopence-test-server and all the shared libs
 	# it requries into a directory, which is then mounted into the container
 	# at runtime.
+	# A statically linked twopence server binary would have been nicer, but
+	# alas we don't have static versions of all its libraries (eg libaudit)
 	def createSidecar(self, datadir):
 		path = os.path.join(datadir, "sidecar")
 		if os.system(f"twopence create-sidecar {path}") != 0:
@@ -657,12 +649,11 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 			data = json.load(f)
 
 		if not data:
-			# We could fall back to using virsh directly...
 			raise ValueError("podman: could not list images")
 
-		listing = PodmanImageListing()
+		listing = ContainerImageListing()
 		for entry in data:
-			config = listing.create(entry)
+			config = listing.addEntryJSON(entry)
 
 		self.listing = listing
 		return listing

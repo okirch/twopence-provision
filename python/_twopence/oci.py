@@ -792,7 +792,6 @@ class ImageFormatDockerRegistry(ImageFormat):
 		self.creds = None
 
 		self.url = searchKey.url
-		print(self.url)
 
 	@property
 	def name(self):
