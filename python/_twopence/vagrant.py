@@ -261,6 +261,9 @@ class VagrantNodeConfig(Configurable):
 class VagrantBackend(Backend):
 	name = "vagrant"
 
+	twopenceBuildOptions = ['twopence', 'twopence-tcp',]
+	twopenceRepositories = ['twopence']
+
 	schema = [
 		Schema.StringAttribute('template'),
 		Schema.FloatAttribute('timeout', default_value = 120),

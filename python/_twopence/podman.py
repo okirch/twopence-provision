@@ -279,6 +279,9 @@ class PodmanNodeConfig(Configurable):
 class PodmanBackend(Backend):
 	name = "podman"
 
+	twopenceBuildOptions = []
+	twopenceRepositories = []
+
 	schema = [
 		Schema.StringAttribute('template'),
 		Schema.FloatAttribute('timeout', default_value = 120),
