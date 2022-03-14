@@ -385,7 +385,7 @@ class PodmanBackend(Backend):
 
 		key = copy.copy(searchKey)
 		key.tag = imageInfo.imageVersion
-		instance.image = key
+		instance.image = str(key)
 
 		return True
 

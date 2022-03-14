@@ -278,7 +278,7 @@ class VagrantBackend(Backend):
 
 	def attachNode(self, node):
 		# detect whether the node we want to provision/build has twopence enabled. If
-		# it does, we also enable "twopence-tcp", which essentially configures
+		# it does, we also enable "twopence-tcp", which configures
 		# the twopence test server to listen on a TCP port
 		if 'twopence' in node.features or 'twopence' in node.requestedBuildOptions:
 			node.requestedBuildOptions.append('twopence-tcp')
