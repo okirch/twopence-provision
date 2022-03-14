@@ -1290,7 +1290,8 @@ class EmptyNodeConfig:
 				raise ConfigError("instance %s wants to use repository %s, but platform %s does not define it" % (
 							self.name, name, self.platform.name))
 
-			self.repositories.append(repo)
+			if repo not in self.repositories:
+				self.repositories.append(repo)
 
 		self.install += role.install
 		self.start += role.start
