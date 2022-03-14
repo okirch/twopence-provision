@@ -1608,6 +1608,7 @@ class Config(Configurable):
 				for platform in pi.platforms:
 					if platform.os == requestedOS and \
 					   platform.hasImageFor(backend, architecture):
+						platform.resolveBasePlatforms(self)
 						yield platform
 
 	# Find the "original" platform that provides an image for the requested OS/backend/architecture,
