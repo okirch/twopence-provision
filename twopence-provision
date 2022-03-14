@@ -388,6 +388,10 @@ class ActionLogin(Action):
 		status = TopologyStatus(config.status)
 		node = status.getNodeState(self.node)
 
+		# We should really use nsenter here.
+		if status.backendName == 'podman':
+			raise ValueError(f"Cannot login to a container handled by backend {status.backendName}")
+
 		if self.use_ipv4:
 			address = node.ipv4_address
 		elif self.use_ipv6:
@@ -398,7 +402,7 @@ class ActionLogin(Action):
 		# The backend should really store the name of the default
 		# account in status.conf
 		user = None
-		if status.backend == 'vagrant':
+		if status.backendName == 'vagrant':
 			user = 'vagrant'
 
 		if not user:
