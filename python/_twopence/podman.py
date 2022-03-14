@@ -506,8 +506,9 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 				argv += ["--ip", addr.address]
 
 		# The default we make the test server listen on
-		argv += ["--expose", "4000"]
-		argv += ["--publish", "4000"]
+		if False:
+			argv += ["--expose", "4000"]
+			argv += ["--publish", "4000"]
 
 		argv += ["--name", instance.containerName]
 
