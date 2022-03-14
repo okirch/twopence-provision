@@ -960,7 +960,8 @@ class Platform(NamedConfigurable):
 		StringAttributeSchema('os'),
 		StringAttributeSchema('arch'),
 		StringAttributeSchema('image'),		# obsolete?
-		SetAttributeSchema('features'),
+		SetAttributeSchema('_features', 'features'),
+		SetAttributeSchema('_non_features', 'non-features'),
 		ListAttributeSchema('resources'),
 		ListAttributeSchema('requires'),
 		ListAttributeSchema('_base_platforms', 'use-base-platforms'),
@@ -1009,6 +1010,13 @@ class Platform(NamedConfigurable):
 	@property
 	def applied_build_options(self):
 		return self._applied_build_options
+
+	@property
+	def features(self):
+		return self._features.difference(self._non_features)
+
+	def updateFeatures(self, features):
+		self._features.update(features.difference(self._non_features))
 
 	##########################################################
 	# The remaining methods and properties are for newly
@@ -1157,7 +1165,7 @@ class Platform(NamedConfigurable):
 				raise ConfigError("Cannot find base platform \"%s\" of platform \"%s\"" % (name, self.name))
 
 			self.base_platforms.append(base)
-			self.features.update(base.features)
+			self.updateFeatures(base.features)
 
 		# print(f"platform {self.name} has features {self.features}")
 		return self.base_platforms
@@ -1439,7 +1447,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 				raise ConfigError(f"Node {self.name} wants to provision {name}, but the option is not compatible with the chosen platform")
 
 			self.mergePlatformOrBuild(build)
-			self.buildResult.features.update(build.features)
+			self.buildResult.updateFeatures(build.features)
 			self.buildResult.resources += build.resources
 			self.buildResult._applied_build_options.add(build.name)
 
@@ -1492,7 +1500,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 		result.os = base.os
 		result._base_platforms.insert(0, base.name)
 		result._applied_build_options.update(base._applied_build_options)
-		result.features.update(self.features)
+		result.updateFeatures(self.features)
 
 		self.buildResult = result
 		return result
