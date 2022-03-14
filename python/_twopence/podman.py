@@ -510,6 +510,10 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 			argv += ["--expose", "4000"]
 			argv += ["--publish", "4000"]
 
+		# This is an ugly hack to allow ping to work
+		# It might be nice to make this configurable somewhere...
+		argv += ["--sysctl net.ipv4.ping_group_range='0 2147483647'"]
+
 		argv += ["--name", instance.containerName]
 
 		if instance.command:
