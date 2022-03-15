@@ -25,6 +25,22 @@ class ConfigError(Exception):
 # to twopence-provision, and should probably go elsewhere...
 ##################################################################
 
+class Locations:
+	default_config_dirs = [
+		twopence.global_config_dir,
+	]
+
+	def __init__(self):
+		self.user_config_dirs = []
+
+	def addDirectory(self, path):
+		path = os.path.expanduser(path)
+		self.user_config_dirs.append(path)
+
+	@property
+	def all_config_dirs(self):
+		return self.default_config_dirs + self.user_config_dirs
+
 ##################################################################
 # Type conversions
 ##################################################################
@@ -1506,10 +1522,6 @@ class FinalNodeConfig(EmptyNodeConfig):
 		return result
 
 class Config(Configurable):
-	_default_config_dirs = [
-		twopence.global_config_dir,
-	]
-
 	schema = [
 		IgnoredAttributeSchema('default-port'),
 		IgnoredNodeSchema('defaults'),
@@ -1537,22 +1549,21 @@ class Config(Configurable):
 
 		self.status = None
 		self._requirementsManager = None
-		self._user_config_dirs = []
+		self._locations = Locations()
 
 		self.defaultRole = self._roles.create("default")
 
 		self._valid = False
 
 	def addDirectory(self, path):
-		path = os.path.expanduser(path)
-		self._user_config_dirs.append(path)
+		self._locations.addDirectory(path)
 
 	# Given a config file name (foo.conf) try to locate the 
 	# file in a number of directories.
 	# Note that user directories (added by .addDirectory() above) take
 	# precedence over the standard ones like /etc/twopence.
 	def locateConfig(self, filename):
-		for basedir in self._user_config_dirs + Config._default_config_dirs:
+		for basedir in self._locations.all_config_dirs:
 			path = os.path.join(basedir, filename)
 			if os.path.exists(path):
 				return path
@@ -1582,7 +1593,7 @@ class Config(Configurable):
 			return self._platforms.values()
 
 	def locatePlatformFiles(self):
-		for basedir in self._user_config_dirs + Config._default_config_dirs:
+		for basedir in self._locations.all_config_dirs:
 			path = os.path.join(basedir, "platform.d")
 			if os.path.isdir(path):
 				for de in os.scandir(path):
@@ -1593,7 +1604,7 @@ class Config(Configurable):
 
 	def locatePlatformsForOS(self, requestedOS, backend, architecture, dirs = None):
 		if dirs is None:
-			dirs = self._user_config_dirs + Config._default_config_dirs
+			dirs = self._locations.all_config_dirs:
 
 		for basedir in dirs:
 			path = os.path.join(basedir, "platform.d")
@@ -1615,7 +1626,7 @@ class Config(Configurable):
 	# ie the one that does not derive from some other platform providing the same OS.
 	def locateBasePlatformForOS(self, requestedOS, backend, architecture):
 		basePlatform = None
-		for platform in self.locatePlatformsForOS(requestedOS, backend, architecture, dirs = Config._default_config_dirs):
+		for platform in self.locatePlatformsForOS(requestedOS, backend, architecture, dirs = self._locations.default_config_dirs):
 			if basePlatform is None:
 				basePlatform = platform
 			elif len(platform.features) > len(basePlatform.features):
