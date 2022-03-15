@@ -1213,6 +1213,16 @@ class Build(Platform):
 
 		return okay
 
+class Application(Platform):
+#	info_attrs = Platform.info_attrs + ['base_platform']
+
+	schema = Platform.schema + [
+		StringAttributeSchema('id'),
+	]
+
+	def __init__(self, name):
+		super().__init__(name)
+
 class EmptyNodeConfig:
 	def __init__(self, name):
 		self.name = name
@@ -1691,6 +1701,29 @@ class RequirementConfigFile(ConfigFile):
 		return self._info.get(name)
 
 ##################################################################
+# Application catalog
+##################################################################
+class ApplicationCatalog(Catalog):
+	def __init__(self, locations):
+		super().__init__(locations, "application.d", ApplicationInfo)
+
+	def locateApplicationsForOS(self, applicationID, requestedOS, backend, architecture, dirs = None):
+		for application in self:
+			if application.id == applicationID and \
+			   application.os == requestedOS and \
+			   application.hasImageFor(backend, architecture):
+				yield application
+
+class ApplicationInfo(ConfigFile):
+	schema = [
+		DictNodeSchema('_applications', 'application', itemClass = Application),
+	]
+
+	@property
+	def applications(self):
+		return self._applications.values()
+
+##################################################################
 # BuildContext - this is what ties all the info from various
 # config sources together
 ##################################################################
@@ -1837,6 +1870,7 @@ class Config(Configurable):
 		StringAttributeSchema('workspace'),
 		StringAttributeSchema('backend'),
 		StringAttributeSchema('testcase'),
+		DictNodeSchema('_applications', 'application', itemClass = Application),
 		DictNodeSchema('_backends', 'backend', itemClass = ConfigOpaque),
 		DictNodeSchema('_roles', 'role', itemClass = Role),
 		DictNodeSchema('_nodes', 'node', itemClass = Node),
@@ -1859,6 +1893,7 @@ class Config(Configurable):
 		self.platformCatalog = PlatformCatalog(self._locations)
 		self.buildCatalog = BuildCatalog(self._locations)
 		self.requirementsCatalog = RequirementCatalog(self._locations)
+		self.applicationCatalog = ApplicationCatalog(self._locations)
 
 		self.defaultRole = self._roles.create("default")
 
