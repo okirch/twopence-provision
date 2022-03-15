@@ -41,6 +41,13 @@ class Locations:
 	def all_config_dirs(self):
 		return self.default_config_dirs + self.user_config_dirs
 
+	@property
+	def default_user_config_dir(self):
+		if not self.user_config_dirs:
+			return None
+		path = self.user_config_dirs[0]
+		return os.path.expanduser(path)
+
 ##################################################################
 # Type conversions
 ##################################################################
@@ -677,28 +684,23 @@ class ConfigRequirement(NamedConfigurable):
 	def getCachedResponse(self, nodeName):
 		return self._cache
 
-	def loadResponse(self, nodeName, config):
+	def loadResponse(self, nodeName, catalog):
 		name = self.name
 
 		if "permanent" not in self.valid:
 			return None
 
 		debug(f"Locating requirement {self.name}")
-		path = config.locateConfig(f"{name}.conf")
-		if path is None:
+		file = catalog.locateFileByName(name)
+		if file is None:
 			debug(f"No cached config for requirement {name}")
 			return None
 
-		debug(f"Loading requirement {self.name} from {path}")
-		cfg = curly.Config(path)
-		child = cfg.tree().get_child("info", self.provides)
-		if child is None:
+		response = file.getResponse(self.provides)
+		if response is None:
 			warning(f"file {path} should contain info {self.provides} " + "{ ... }")
 			warning(f"Ignoring {path}...")
 			return None
-
-		response = ConfigOpaque(self.provides)
-		response.configure(child)
 
 		return response
 
@@ -708,27 +710,10 @@ class ConfigRequirement(NamedConfigurable):
 		if "allnodes" in self.valid:
 			self._cache = response
 
-		self.saveResponse(nodeName, response)
 		return response
 
-	def saveResponse(self, nodeName, response):
-		if "allnodes" in self.valid:
-			self._cache = response
-
-		if "permanent" not in self.valid:
-			return
-
-		path = os.path.expanduser(twopence.user_config_dir)
-		path = os.path.join(path, f"{self.name}.conf")
-
-		debug(f"Saving requirement {self.name} to {path}")
-		cfg = curly.Config()
-
-		root = cfg.tree()
-		child = root.add_child("info", self.provides)
-		response.publish(child)
-
-		cfg.save(path)
+	def shouldSaveResponse(self, response):
+		return response and "permanent" in self.valid
 
 class Repository(NamedConfigurable):
 	info_attrs = ['name', 'url']
@@ -1170,22 +1155,6 @@ class Platform(NamedConfigurable):
 			debug(f"  no image matching {backend} and {arch}")
 		return found
 
-	def resolveBasePlatforms(self, config):
-		if self.base_platforms is not None:
-			return
-
-		self.base_platforms = []
-		for name in self._base_platforms:
-			base = config.getPlatform(name)
-			if base is None:
-				raise ConfigError("Cannot find base platform \"%s\" of platform \"%s\"" % (name, self.name))
-
-			self.base_platforms.append(base)
-			self.updateFeatures(base.features)
-
-		# print(f"platform {self.name} has features {self.features}")
-		return self.base_platforms
-
 class Role(NamedConfigurable):
 	info_attrs = ["name", "platform", "repositories", "features",]
 
@@ -1430,32 +1399,33 @@ class EmptyNodeConfig:
 		return result
 
 class FinalNodeConfig(EmptyNodeConfig):
-	def __init__(self, node, platform, roles, satisfied_requirements):
+	def __init__(self, node, buildContext, roles):
 		super().__init__(node.name)
 
-		self.platform = platform
+		self.buildContext = buildContext
+		self.platform = buildContext.platform
 		self.role = node.role
 		self.install += node.install
 		self.start += node.start
 		self.backends = node._backends
-		self.satisfiedRequirements = satisfied_requirements
+		self.satisfiedRequirements = buildContext.satisfiedRequirements
 
 		self.describeBuildResult()
 
-		self.mergePlatformOrBuild(platform)
+		self.mergePlatformOrBuild(self.platform)
 
-		self.requestedBuildOptions += platform._always_build
+		self.requestedBuildOptions += self.platform._always_build
 		self.requestedBuildOptions += node.build
 
 		for role in roles:
 			self.fromRole(role)
 
-	def resolveBuildOptions(self, config):
+	def resolveBuildOptions(self, catalog):
 		for name in self.requestedBuildOptions:
 			if name in self.platform._applied_build_options:
 				continue
 
-			build = config.getBuild(name)
+			build = self.buildContext.resolveBuild(name, catalog)
 			if build is None:
 				raise ConfigError(f"Node {self.name} wants to provision {name}, but I don't know how")
 
@@ -1521,6 +1491,362 @@ class FinalNodeConfig(EmptyNodeConfig):
 		self.buildResult = result
 		return result
 
+##################################################################
+# A catalog represents all config files of a certain kind
+# (eg all platform files, all resource files, etc).
+##################################################################
+class Catalog:
+	# directoryName is a relative name, like platform.d or resource.d
+	# infoClass is a subclass of ConfigFile
+	def __init__(self, locations, directoryName, fileContentClass):
+		self._locations = locations
+		self._directoryName = directoryName
+		self._fileContentClass = fileContentClass
+
+	def files(self, dirs = None):
+		if dirs is None:
+			dirs = self._locations.all_config_dirs
+
+		for basedir in dirs:
+			path = os.path.join(basedir, self._directoryName)
+			if os.path.isdir(path):
+				for de in os.scandir(path):
+					if not de.is_file() or not de.name.endswith(".conf"):
+						continue
+
+					yield self._fileContentClass(de.path)
+
+	def xxxload(self, filename):
+		filename = self.locateConfig(filename)
+		if filename is None:
+			return False
+
+		self.configureFromPath(filename)
+		return True
+
+	# Given a config file name (foo.conf) try to locate the
+	# file in a number of places.
+	# Note that user directories (added by Config.addDirectory()) take
+	# precedence over the standard ones like /etc/twopence.
+	def locateConfig(self, filename, directoryName = None):
+		if directoryName is None:
+			directoryName = self._directoryName
+
+		if not filename.endswith(".conf"):
+			filename += ".conf"
+
+		debug(f"Looking for {filename}")
+		for basedir in self._locations.all_config_dirs:
+			path = os.path.join(basedir, directoryName, filename)
+			if os.path.exists(path):
+				debug(f"  found {path}")
+				return self._fileContentClass(path)
+		debug(f"  no cigar")
+		return None
+
+	def __iter__(self):
+		for file in self.files():
+			for object in file:
+				yield object
+
+class ConfigFile(Configurable):
+	def __init__(self, path, loadFile = True):
+		super().__init__()
+		self.path = path
+		if loadFile:
+			self.configureFromPath(path)
+
+	def __str__(self):
+		return self.path
+		return f"{self.__class__.__name__}({self.path})"
+
+##################################################################
+# Platform catalog
+##################################################################
+class PlatformCatalog(Catalog):
+	def __init__(self, locations):
+		super().__init__(locations, "platform.d", PlatformConfigFile)
+
+	def platformByName(self, name):
+		for file in self.files():
+			platform = file.getPlatform(name)
+			if platform is not None:
+				return platform
+		return None
+
+	# Given a platform name, return the file that contains it
+	def locatePlatformFileByName(self, name):
+		for file in self.files():
+			platform = file.getPlatform(name)
+			if platform is not None:
+				return file
+		return None
+
+	def locatePlatformsForOS(self, requestedOS, backend, architecture, dirs = None):
+		# debug(f"locatePlatformsForOS(os={requestedOS}, backend={backend}, architecture={architecture})")
+		for file in self.files():
+			for platform in file.platforms:
+				if platform.os == requestedOS and \
+				   platform.hasImageFor(backend, architecture):
+					yield platform
+
+	@property
+	def platforms(self):
+		for fi in self.files():
+			for platform in fi.platforms:
+				yield platform
+
+	def getPlatform(self, name):
+		for fi in self.files():
+			platform = fi.getPlatform(name)
+			if platform is not None:
+				return platform
+		return None
+
+	@property
+	def builds(self):
+		for fi in self.files():
+			for build in fi.builds:
+				yield build
+
+	def getBuild(self, name):
+		for fi in self.files():
+			build = fi.getPlatform(name)
+			if build is not None:
+				return build
+		return None
+
+class PlatformConfigFile(ConfigFile):
+	schema = [
+		DictNodeSchema('_platforms', 'platform', itemClass = Platform),
+		DictNodeSchema('_builds', 'build', itemClass = Build),
+		DictNodeSchema('_requirements', 'requirement', itemClass = ConfigRequirement),
+	]
+
+	@property
+	def builds(self):
+		return self._builds.values()
+
+	@property
+	def platforms(self):
+		return self._platforms.values()
+
+	@property
+	def requirements(self):
+		return self._requirements.values()
+
+	def getPlatform(self, name):
+		return self._platforms.get(name)
+
+	def getBuild(self, name):
+		return self._builds.get(name)
+
+##################################################################
+# Build catalog
+#
+# This catalog works slightly different from the platform catalog.
+# When a build refers to a "base build" named foo, we do not search
+# all files in build.d/ for a build named foo. Instead, we want
+# to open build.d/foo.conf and add all builds defined there, no
+# matter what they're called.
+##################################################################
+class BuildCatalog(Catalog):
+	def __init__(self, locations):
+		super().__init__(locations, "build.d", BuildConfigFile)
+
+	def locateFileByName(self, name):
+		return self.locateConfig(name)
+
+class BuildConfigFile(ConfigFile):
+	schema = [
+		DictNodeSchema('_builds', 'build', itemClass = Build),
+	]
+
+	@property
+	def builds(self):
+		return self._builds.values()
+
+	def getBuild(self, name):
+		return self._builds.get(name)
+
+##################################################################
+# Requirement catalog
+#
+# This catalog works slightly different from the platform catalog.
+# When a build refers to a "base build" named foo, we do not search
+# all files in build.d/ for a build named foo. Instead, we want
+# to open build.d/foo.conf and add all builds defined there, no
+# matter what they're called.
+##################################################################
+class RequirementCatalog(Catalog):
+	def __init__(self, locations):
+		super().__init__(locations, '', RequirementConfigFile)
+
+	def locateFileByName(self, name):
+		return self.locateConfig(name)
+
+	def saveResponse(self, name, response):
+		config_dir = self._locations.default_user_config_dir
+		if config_dir is None:
+			warning(f"Cannot save data for requirement {name} - no user config dir set")
+			return None
+
+		path = os.path.join(config_dir, f"{name}.conf")
+		file = self._fileContentClass(path, loadFile = False)
+		file._info[name] = response
+		file.publishToPath(path)
+
+class RequirementConfigFile(ConfigFile):
+	schema = [
+		DictNodeSchema('_info', 'info', itemClass = ConfigOpaque),
+	]
+
+	@property
+	def responses(self):
+		return self._info.values()
+
+	def getResponse(self, name):
+		return self._info.get(name)
+
+##################################################################
+# BuildContext - this is what ties all the info from various
+# config sources together
+##################################################################
+class BuildContext:
+	def __init__(self, file, platform):
+		self.path = file.path		# for list-platforms
+		self.platform = platform
+		self.satisfiedRequirements = None
+
+		self._platforms = {}
+		self._builds = {}
+		self._requirements = {}
+
+		self._mergePlatformFile(file)
+
+	def __str__(self):
+		return self.platform.name
+
+	def _mergePlatformFile(self, file):
+		self._mergeDict(self._platforms, file.platforms)
+		self._mergeDict(self._builds, file.builds)
+		self._mergeDict(self._requirements, file.requirements)
+
+	def _mergeBuildFile(self, file):
+		self._mergeDict(self._builds, file.builds)
+
+	def _mergeDict(self, myDict, fileObjectIter):
+		for object in fileObjectIter:
+			if object.name not in myDict:
+				myDict[object.name] = object
+
+	@property
+	def platforms(self):
+		return self._platforms.values()
+
+	def getPlatform(self, name):
+		return self._platforms.get(name)
+
+	@property
+	def builds(self):
+		return self._builds.values()
+
+	def getBuild(self, name):
+		return self._builds.get(name)
+
+	def getRequirement(self, name):
+		return self._requirements.get(name)
+
+	def validate(self):
+		platform = self.platform
+		if not platform.vendor or not platform.os:
+			raise ConfigError(f"Node {node.name} uses platform {platform.name}, which lacks a vendor and os definition")
+
+	def resolveBasePlatforms(self, platform, catalog):
+		if platform.base_platforms is not None:
+			return
+
+		debug(f"resolving base platforms of platform {platform.name}")
+		platform.base_platforms = []
+		for name in platform._base_platforms:
+			base = self.getPlatform(name)
+			if base is None:
+				file = catalog.locatePlatformFileByName(name)
+				if file is None:
+					raise ConfigError(f"Cannot find base platform \"{name}\" of platform \"{platform.name}\"")
+
+				base = file.getPlatform(name)
+				self._mergePlatformFile(file)
+
+			platform.base_platforms.append(base)
+
+		for base in platform.base_platforms:
+			self.resolveBasePlatforms(base, catalog)
+			platform.updateFeatures(base.features)
+
+		# debug(f"platform {platform.name} has features {platform.features}")
+		return platform.base_platforms
+
+	def resolveBaseBuilds(self, build, catalog):
+		if build.base_builds is not None:
+			return build.base_builds
+
+		debug(f"resolving base builds of build {build.name}")
+		build.base_builds = []
+		for name in build._base_builds:
+			base = self.loadBuild(name, catalog)
+			if base is None:
+				raise ConfigError(f"Cannot find base build \"{name}\" of build \"{build.name}\"")
+
+			build.base_builds.append(base)
+
+		for base in build.base_builds:
+			self.resolveBaseBuilds(base, catalog)
+
+		return build.base_builds
+
+	def resolveImage(self, backendName):
+		return self.platform.resolveImage(backendName)
+
+	def resolveRequirements(self, requirementsManager, nodeName):
+		satisfied = []
+
+		platform = self.platform
+		if platform.requires:
+			for name in platform.requires:
+				# For now, we only consider requirements included in the platform file.
+				req = self.getRequirement(name)
+				if req is None:
+					raise ConfigError(f"node {nodeName} requires \"{name}\" but I can't find a description for it")
+
+				response = None
+				if requirementsManager:
+					response = requirementsManager.handle(nodeName, req)
+
+				if response is None:
+					raise ConfigError(f"node {nodeName} requires \"{name}\" but I don't know how to provide it")
+
+				satisfied.append(response)
+
+		self.satisfiedRequirements = satisfied
+
+	def resolveBuild(self, name, catalog):
+		build = self.loadBuild(name, catalog)
+		if build is not None:
+			self.resolveBaseBuilds(build, catalog)
+		return build
+
+	def loadBuild(self, name, catalog):
+		found = self.getBuild(name)
+		if found is None:
+			file = catalog.locateFileByName(name)
+			if file is None:
+				return None
+
+			found = file.getBuild(name)
+			self._mergeBuildFile(file)
+		return found
+
 class Config(Configurable):
 	schema = [
 		IgnoredAttributeSchema('default-port'),
@@ -1530,11 +1856,8 @@ class Config(Configurable):
 		StringAttributeSchema('backend'),
 		StringAttributeSchema('testcase'),
 		DictNodeSchema('_backends', 'backend', itemClass = ConfigOpaque),
-		DictNodeSchema('_platforms', 'platform', itemClass = Platform),
 		DictNodeSchema('_roles', 'role', itemClass = Role),
 		DictNodeSchema('_nodes', 'node', itemClass = Node),
-		DictNodeSchema('_builds', 'build', itemClass = Build),
-		DictNodeSchema('_requirements', 'requirement', itemClass = ConfigRequirement),
 		ListAttributeSchema('_repositories', 'repository'),
 		ParameterNodeSchema('_parameters', 'parameters'),
 
@@ -1550,6 +1873,10 @@ class Config(Configurable):
 		self.status = None
 		self._requirementsManager = None
 		self._locations = Locations()
+
+		self.platformCatalog = PlatformCatalog(self._locations)
+		self.buildCatalog = BuildCatalog(self._locations)
+		self.requirementsCatalog = RequirementCatalog(self._locations)
 
 		self.defaultRole = self._roles.create("default")
 
@@ -1569,64 +1896,17 @@ class Config(Configurable):
 				return path
 		return None
 
-	class PlatformInfo(Configurable):
-		info_attrs = ['path']
-
-		schema = [
-			DictNodeSchema('_platforms', 'platform', itemClass = Platform),
-			DictNodeSchema('_builds', 'build', itemClass = Build),
-			DictNodeSchema('_requirements', 'requirement', itemClass = ConfigRequirement),
-			StringAttributeSchema('build_time', 'build-time'),
-		]
-
-		def __init__(self, path):
-			super().__init__()
-			self.path = path
-			self.configureFromPath(path)
-
-		@property
-		def builds(self):
-			return self._builds.values()
-
-		@property
-		def platforms(self):
-			return self._platforms.values()
-
 	def locatePlatformFiles(self):
-		for basedir in self._locations.all_config_dirs:
-			path = os.path.join(basedir, "platform.d")
-			if os.path.isdir(path):
-				for de in os.scandir(path):
-					if not de.is_file() or not de.name.endswith(".conf"):
-						continue
+		return iter(self.platformCatalog.files())
 
-					yield self.PlatformInfo(de.path)
-
-	def locatePlatformsForOS(self, requestedOS, backend, architecture, dirs = None):
-		if dirs is None:
-			dirs = self._locations.all_config_dirs:
-
-		for basedir in dirs:
-			path = os.path.join(basedir, "platform.d")
-			if not os.path.isdir(path):
-				continue
-
-			for de in os.scandir(path):
-				if not de.is_file() or not de.name.endswith(".conf"):
-					continue
-
-				pi = self.PlatformInfo(de.path)
-				for platform in pi.platforms:
-					if platform.os == requestedOS and \
-					   platform.hasImageFor(backend, architecture):
-						platform.resolveBasePlatforms(self)
-						yield platform
+	def locatePlatformsForOS(self, requestedOS, backend, architecture):
+		return iter(self.platformCatalog.locatePlatformsForOS(requestedOS, backend, architecture))
 
 	# Find the "original" platform that provides an image for the requested OS/backend/architecture,
 	# ie the one that does not derive from some other platform providing the same OS.
 	def locateBasePlatformForOS(self, requestedOS, backend, architecture):
 		basePlatform = None
-		for platform in self.locatePlatformsForOS(requestedOS, backend, architecture, dirs = self._locations.default_config_dirs):
+		for platform in self.platformCatalog.locatePlatformsForOS(requestedOS, backend, architecture, dirs = self._locations.default_config_dirs):
 			if basePlatform is None:
 				basePlatform = platform
 			elif len(platform.features) > len(basePlatform.features):
@@ -1635,6 +1915,12 @@ class Config(Configurable):
 		if basePlatform:
 			basePlatform.resolveBasePlatforms(self)
 		return basePlatform
+
+	def locateBuildTargets(self):
+		for file in self.locatePlatformFiles():
+			for platform in file.platforms:
+				if platform.os:
+					yield self.createBuildContext(file, platform)
 
 	def load(self, filename):
 		filename = self.locateConfig(filename)
@@ -1661,16 +1947,27 @@ class Config(Configurable):
 
 	@property
 	def platforms(self):
-		return self._platforms.values()
+		return self.platformCatalog.platforms
 
-	def getPlatform(self, name):
-		found = self._platforms.get(name)
-		if found is None:
-			if self.load("platform.d/%s.conf" % name):
-				found = self._platforms.get(name)
-		if found:
-			found.resolveBasePlatforms(self)
-		return found
+	def buildContextForPlatform(self, name):
+		for file in self.platformCatalog.files():
+			platform = file.getPlatform(name)
+			if platform is not None:
+				return self.createBuildContext(file, platform)
+
+		return None
+
+	def createBuildContext(self, file, platform):
+		context = BuildContext(file, platform)
+		context.resolveBasePlatforms(platform, self.platformCatalog)
+
+		for build in list(context.builds):
+			context.resolveBaseBuilds(build, self.buildCatalog)
+
+		for build in context.builds:
+			debug(f"platform {platform.name} supports build option {build.name}")
+
+		return context
 
 	@property
 	def roles(self):
@@ -1687,19 +1984,6 @@ class Config(Configurable):
 		return self._nodes.get(name)
 
 	@property
-	def builds(self):
-		return self._builds.values()
-
-	def getBuild(self, name):
-		found = self._builds.get(name)
-		if found is None:
-			if self.load("build.d/%s.conf" % name):
-				found = self._builds.get(name)
-		if found:
-			found.resolveBaseBuilds(self)
-		return found
-
-	@property
 	def parameters(self):
 		return self._parameters
 
@@ -1707,13 +1991,6 @@ class Config(Configurable):
 	def parameters(self, value):
 		assert(isinstance(value, dict))
 		self._parameters.update(value)
-
-	@property
-	def requirements(self):
-		return self._requirements
-
-	def getRequirement(self, name):
-		return self._requirements.get(name)
 
 	@property
 	def requirementsManager(self):
@@ -1745,26 +2022,11 @@ class Config(Configurable):
 	def finalizeNode(self, node, backend):
 		roles = self.rolesForNode(node)
 
-		platform = self.platformForNode(node, roles)
-		if not platform.resolveImage(backend.name):
-			raise ConfigError(f"Unable to determine {backend.name} image for node {node.name}")
+		buildContext = self.platformForNode(backend, node, roles)
 
-		if not platform.vendor or not platform.os:
-			raise ConfigError("Node %s uses platform %s, which lacks a vendor and os definition" % (platform.name, node.name))
+		result = FinalNodeConfig(node, buildContext, roles)
 
-		satisfied = []
-		if platform.requires:
-			for name in platform.requires:
-				response = None
-				if self._requirementsManager:
-					response = self._requirementsManager.handle(node.name, name)
-
-				if response is None:
-					raise ConfigError("node %s requires \"%s\" but I don't know how to provide it" % (node.name, name))
-
-				satisfied.append(response)
-
-		result = FinalNodeConfig(node, platform, roles, satisfied)
+		# FIXME: fold all of the rest into buildContext as well
 
 		# Extract and apply backend specific configuration from platform and node
 		backendNode = backend.attachNode(result)
@@ -1772,7 +2034,7 @@ class Config(Configurable):
 		# Now resolve all requested build options.
 		# We do it here, because the backend may request additional build options
 		# in backend.attachNode() above
-		result.resolveBuildOptions(self)
+		result.resolveBuildOptions(self.buildCatalog)
 
 		# And finally, configure the backend specific options for this node,
 		# such as template, url, etc but also the timeout
@@ -1780,7 +2042,7 @@ class Config(Configurable):
 		debug(f"Backend {backend.name} configured {node.name} as {backendNode}")
 
 		for repo in result.repositories:
-			if not platform.repositoryIsActive(repo):
+			if not buildContext.platform.repositoryIsActive(repo):
 				result.activate_repositories.append(repo)
 
 		return result
@@ -1800,12 +2062,21 @@ class Config(Configurable):
 				roles.append(role)
 		return roles
 
-	def platformForNode(self, node, roles = None):
-		if roles is None:
-			roles = self.rolesForNode(node)
+	def platformForNode(self, backend, node, roles):
+		buildContext = self._platformForNode(node, roles)
 
+		buildContext.validate()
+
+		if not buildContext.resolveImage(backend.name):
+			raise ConfigError(f"Unable to determine {backend.name} image for platform {buildContext}")
+
+		buildContext.resolveRequirements(self._requirementsManager, node.name)
+
+		return buildContext
+
+	def _platformForNode(self, node, roles):
 		if node.platform:
-			platform = self.getPlatform(node.platform)
+			platform = self.buildContextForPlatform(node.platform)
 			if platform:
 				return platform
 
@@ -1815,7 +2086,7 @@ class Config(Configurable):
 			if not role.platform:
 				continue
 
-			platform = self.getPlatform(role.platform)
+			platform = self.buildContextForPlatform(role.platform)
 			if platform:
 				return platform
 
@@ -1835,8 +2106,8 @@ class Config(Configurable):
 # Front-end should derive from this
 ##################################################################
 class RequirementsManager(object):
-	def __init__(self, config):
-		self.config = config
+	def __init__(self, catalog):
+		self.catalog = catalog
 		self._cache = dict()
 		self._configs = []
 
@@ -1845,21 +2116,22 @@ class RequirementsManager(object):
 	def prompt(self, nodeName, req):
 		return None
 
-	def handle(self, nodeName, reqName):
-		req = self.config.getRequirement(reqName)
-		if req is None:
-			raise ConfigError("Nothing known about requirement %s" % reqName)
-
+	def handle(self, nodeName, req):
 		# First, let's see if we cached it during a previous call
 		response = req.getCachedResponse(nodeName)
 
+		# If not, see if can load it from the requirements catalog
 		if response is None:
-			response = req.loadResponse(nodeName, self.config)
+			response = req.loadResponse(nodeName, self.catalog)
 
+		# If that failed, too, prompt the user for it
 		if response is None:
 			data = self.prompt(nodeName, req)
 			if data:
 				response = req.buildResponse(nodeName, data)
+
+			if req.shouldSaveResponse(response):
+				self.catalog.saveResponse(req.name, response)
 
 		return response
 
