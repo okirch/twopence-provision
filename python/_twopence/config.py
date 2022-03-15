@@ -1187,6 +1187,7 @@ class Build(Platform):
 	info_attrs = Platform.info_attrs + ['base_platform']
 
 	schema = Platform.schema + [
+		# currently not being used:
 		StringAttributeSchema('base_platform', key = 'base-platform'),
 		ListAttributeSchema('_base_builds', 'use-base-builds'),
 		DictNodeSchema('_compatibility', 'compatibility', itemClass = Compatibility),
@@ -1195,20 +1196,6 @@ class Build(Platform):
 	def __init__(self, name):
 		super().__init__(name)
 		self.base_builds = None
-
-	def resolveBaseBuilds(self, config):
-		if self.base_builds is not None:
-			return self.base_builds
-
-		self.base_builds = []
-		for name in self._base_builds:
-			base = config.getBuild(name)
-			if base is None:
-				raise ConfigError("Cannot find base build \"%s\" of build \"%s\"" % (name, self.name))
-
-			self.base_builds.append(base)
-
-		return self.base_builds
 
 	def compatibleWithPlatform(self, platform):
 		return self.checkPlatformFeatures(set(platform.features))
@@ -1543,11 +1530,6 @@ class Catalog:
 				return self._fileContentClass(path)
 		debug(f"  no cigar")
 		return None
-
-	def __iter__(self):
-		for file in self.files():
-			for object in file:
-				yield object
 
 class ConfigFile(Configurable):
 	def __init__(self, path, loadFile = True):
@@ -1902,20 +1884,6 @@ class Config(Configurable):
 	def locatePlatformsForOS(self, requestedOS, backend, architecture):
 		return iter(self.platformCatalog.locatePlatformsForOS(requestedOS, backend, architecture))
 
-	# Find the "original" platform that provides an image for the requested OS/backend/architecture,
-	# ie the one that does not derive from some other platform providing the same OS.
-	def locateBasePlatformForOS(self, requestedOS, backend, architecture):
-		basePlatform = None
-		for platform in self.platformCatalog.locatePlatformsForOS(requestedOS, backend, architecture, dirs = self._locations.default_config_dirs):
-			if basePlatform is None:
-				basePlatform = platform
-			elif len(platform.features) > len(basePlatform.features):
-				basePlatform = platform
-
-		if basePlatform:
-			basePlatform.resolveBasePlatforms(self)
-		return basePlatform
-
 	def locateBuildTargets(self):
 		for file in self.locatePlatformFiles():
 			for platform in file.platforms:
@@ -2093,13 +2061,6 @@ class Config(Configurable):
 			raise ConfigError("Cannot find platform \"%s\" for role \"%s\"" % (role.platform, node.role))
 
 		raise ConfigError("No platform defined for node \"%s\" (role \"%s\")" % (node.name, node.role))
-
-	def getPlatformFeatures(self):
-		result = set()
-		for node in self.nodes:
-			platform = self.platformForNode(node)
-			result.update(platform.features)
-		return result
 
 ##################################################################
 # Handle requirements
