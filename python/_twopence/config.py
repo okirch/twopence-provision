@@ -1390,8 +1390,9 @@ class EmptyNodeConfig:
 
 		for response in self.satisfiedRequirements:
 			respName = response.name.replace('-', '_')
-			prefix = f"TWOPENCE_INFO_{respName}"
-			result.exportDict(response.data, prefix)
+			for key, value in response.items():
+				varName = f"TWOPENCE_INFO_{respName}_{key}".upper()
+				result.export(varName, value)
 
 		return result
 

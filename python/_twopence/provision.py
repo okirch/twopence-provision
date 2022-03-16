@@ -106,14 +106,6 @@ class ProvisioningShellEnvironment:
 		else:
 			raise NotImplementedError("shell variable assignment %s=%s" % (name, value))
 
-	def exportDict(self, d, prefix):
-		if not d:
-			return
-
-		for name, value in d.items():
-			key = "%s_%s" % (prefix, name)
-			self.export(key.upper(), value)
-
 	def __iter__(self):
 		return iter(self._env)
 
