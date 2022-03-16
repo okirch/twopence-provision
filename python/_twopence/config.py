@@ -1747,21 +1747,24 @@ class BuildContext:
 		self._builds = {}
 		self._requirements = {}
 
-		self._mergePlatformFile(file)
+		self._mergeFile(file)
 
 	def __str__(self):
 		return self.platform.name
 
-	def _mergePlatformFile(self, file):
-		self._mergeDict(self._platforms, file.platforms)
-		self._mergeDict(self._builds, file.builds)
-		self._mergeDict(self._requirements, file.requirements)
+	def _mergeFile(self, file):
+		self._mergeDict(self._platforms, file, 'platforms')
+		self._mergeDict(self._platforms, file, 'applications')
+		self._mergeDict(self._builds, file, 'builds')
+		self._mergeDict(self._requirements, file, 'requirements')
 
-	def _mergeBuildFile(self, file):
-		self._mergeDict(self._builds, file.builds)
+	def _mergeDict(self, myDict, file, attr_name):
+		objectIter = getattr(file, attr_name, None)
+		if objectIter is None:
+			debug(f"{file} has no {attr_name}")
+			return
 
-	def _mergeDict(self, myDict, fileObjectIter):
-		for object in fileObjectIter:
+		for object in objectIter:
 			if object.name not in myDict:
 				myDict[object.name] = object
 
@@ -1801,7 +1804,7 @@ class BuildContext:
 					raise ConfigError(f"Cannot find base platform \"{name}\" of platform \"{platform.name}\"")
 
 				base = file.getPlatform(name)
-				self._mergePlatformFile(file)
+				self._mergeFile(file)
 
 			platform.base_platforms.append(base)
 
@@ -1869,7 +1872,7 @@ class BuildContext:
 				return None
 
 			found = file.getBuild(name)
-			self._mergeBuildFile(file)
+			self._mergeFile(file)
 		return found
 
 class Config(Configurable):
