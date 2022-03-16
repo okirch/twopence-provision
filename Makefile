@@ -20,6 +20,7 @@ install::
 	@cp -av etc/platform.d $(DESTDIR)$(TWP_ETCDIR)
 	@cp -av etc/resource.d $(DESTDIR)$(TWP_ETCDIR)
 	@cp -av etc/build.d $(DESTDIR)$(TWP_ETCDIR)
+	@cp -av etc/application.d $(DESTDIR)$(TWP_ETCDIR)
 	mkdir -p $(DESTDIR)$(TWP_LIBDIR)
 	@install -vm 444 templates/Vagrantfile.in $(DESTDIR)$(TWP_LIBDIR)
 	@for script_dir in shell; do \

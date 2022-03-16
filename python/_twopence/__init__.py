@@ -47,5 +47,11 @@ def locatePlatformsForOS(os, backend, architecture = None):
 	for platform in config.locatePlatformsForOS(os, backend, architecture):
 		yield platform
 
+def locateApplicationsForOS(application, os, backend, architecture = None):
+	config = __buildDummyConfig()
+
+	for platform in config.locateApplicationsForOS(application, os, backend, architecture):
+		yield platform
+
 def createBackend(name):
 	return Backend.create(name or 'vagrant')

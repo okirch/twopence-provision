@@ -1028,6 +1028,10 @@ class Platform(NamedConfigurable):
 	def updateFeatures(self, features):
 		self._features.update(features.difference(self._non_features))
 
+	@property
+	def isApplication(self):
+		return False
+
 	##########################################################
 	# The remaining methods and properties are for newly
 	# built silver images only
@@ -1169,6 +1173,7 @@ class Role(NamedConfigurable):
 
 	schema = [
 		StringAttributeSchema('platform'),
+		StringAttributeSchema('application'),
 		ListAttributeSchema('repositories'),
 		ListAttributeSchema('install'),
 		ListAttributeSchema('start'),
@@ -1182,6 +1187,7 @@ class Node(NamedConfigurable):
 	schema = [
 		StringAttributeSchema('_role', 'role'),
 		StringAttributeSchema('platform'),
+		StringAttributeSchema('application'),
 		ListAttributeSchema('build'),
 		ListAttributeSchema('install'),
 		ListAttributeSchema('start'),
@@ -1231,6 +1237,10 @@ class Application(Platform):
 
 	def __init__(self, name):
 		super().__init__(name)
+
+	@property
+	def isApplication(self):
+		return True
 
 class EmptyNodeConfig:
 	def __init__(self, name):
@@ -1718,11 +1728,12 @@ class ApplicationCatalog(Catalog):
 		super().__init__(locations, "application.d", ApplicationInfo)
 
 	def locateApplicationsForOS(self, applicationID, requestedOS, backend, architecture, dirs = None):
-		for application in self:
-			if application.id == applicationID and \
-			   application.os == requestedOS and \
-			   application.hasImageFor(backend, architecture):
-				yield application
+		for file in self.files():
+			for application in file.applications:
+				if application.id == applicationID and \
+				   (requestedOS is None or application.os == requestedOS) and \
+				   application.hasImageFor(backend, architecture):
+					yield application
 
 class ApplicationInfo(ConfigFile):
 	schema = [
@@ -1732,6 +1743,9 @@ class ApplicationInfo(ConfigFile):
 	@property
 	def applications(self):
 		return self._applications.values()
+
+	def getApplication(self, name):
+		return self._applications.get(name)
 
 ##################################################################
 # BuildContext - this is what ties all the info from various
@@ -1932,6 +1946,9 @@ class Config(Configurable):
 	def locatePlatformsForOS(self, requestedOS, backend, architecture):
 		return iter(self.platformCatalog.locatePlatformsForOS(requestedOS, backend, architecture))
 
+	def locateApplicationsForOS(self, application, requestedOS, backend, architecture):
+		return iter(self.applicationCatalog.locateApplicationsForOS(application, requestedOS, backend, architecture))
+
 	def locateBuildTargets(self):
 		for file in self.locatePlatformFiles():
 			for platform in file.platforms:
@@ -1970,6 +1987,14 @@ class Config(Configurable):
 			platform = file.getPlatform(name)
 			if platform is not None:
 				return self.createBuildContext(file, platform)
+
+		return None
+
+	def buildContextForApplication(self, name):
+		for file in self.applicationCatalog.files():
+			application = file.getApplication(name)
+			if application is not None:
+				return self.createBuildContext(file, application)
 
 		return None
 
@@ -2091,22 +2116,28 @@ class Config(Configurable):
 		return buildContext
 
 	def _platformForNode(self, node, roles):
-		if node.platform:
-			platform = self.buildContextForPlatform(node.platform)
+		def tryPlatform(name, originType, originName):
+			platform = self.buildContextForPlatform(name)
 			if platform:
 				return platform
+			raise ConfigError(f"Cannot find platform \"{name}\" for {originType} {originName}")
 
-			raise ConfigError("Cannot find platform \"%s\" for node \"%s\"" % (node.platform, node.name))
+		def tryApplication(name, originType, originName):
+			application = self.buildContextForApplication(name)
+			if application:
+				return application
+			raise ConfigError(f"Cannot find application \"{name}\" for {originType} {originName}")
+
+		if node.platform:
+			return tryPlatform(node.platform, "node", node.name)
+		if node.application:
+			return tryApplication(node.application, "node", node.name)
 
 		for role in roles:
-			if not role.platform:
-				continue
-
-			platform = self.buildContextForPlatform(role.platform)
-			if platform:
-				return platform
-
-			raise ConfigError("Cannot find platform \"%s\" for role \"%s\"" % (role.platform, node.role))
+			if role.platform:
+				return tryPlatform(role.platform, "role", role.name)
+			if role.application:
+				return tryApplication(role.application, "role", role.name)
 
 		raise ConfigError("No platform defined for node \"%s\" (role \"%s\")" % (node.name, node.role))
 
