@@ -245,33 +245,33 @@ class SetAttributeSchema(AttributeSchema):
 # objects in python
 ##################################################################
 class NodeSchema(Schema):
-	def __init__(self, name, key, containerClass):
+	def __init__(self, name, key, memberClass):
 		super().__init__(name, key)
-		self.containerClass = containerClass
+		self.memberClass = memberClass
 
 	def initialize(self, obj):
-		setattr(obj, self.name, self.containerClass())
+		setattr(obj, self.name, self.memberClass())
 
 	def __str__(self):
 		info = [self.name]
 		if self.key != self.name:
 			info.append("key='%s'" % self.key)
-		info.append("container=%s" % self.containerClass)
+		info.append("member=%s" % self.memberClass)
 		return "%s(%s)" % (self.__class__.__name__, ", ".join(info))
 
-	def getContainerFor(self, obj):
-		containerObject = getattr(obj, self.name, None)
-		if containerObject is None:
-			raise ValueError("Node %s has no member %s" % (obj, self.name))
-		return containerObject
+	def getObjectMember(self, obj):
+		member = getattr(obj, self.name, None)
+		if member is None:
+			raise ValueError(f"Node {obj} has no member {self.name}")
+		return member
 
 	def update(self, obj, node):
 		self.debug("Updating %s object's %s by creating %s(%s)" % (
 			obj.__class__.__name__, self.name,
 			node.type, node.name))
 
-		container = self.getContainerFor(obj)
-		item = container.create(node.name)
+		member = self.getObjectMember(obj)
+		item = member.create(node.name)
 		item.configure(node)
 
 		if True:
@@ -280,31 +280,26 @@ class NodeSchema(Schema):
 	def publish(self, obj, node):
 		self.debug("Publishing %s object's %s" % (obj.__class__.__name__, self.name))
 
-		container = self.getContainerFor(obj)
-		for item in container.values():
+		member = self.getObjectMember(obj)
+		for item in member.values():
 			child = node.add_child(self.key, item.name)
 			item.publish(child)
 
 	def _facadeGetter(self, object):
 		object = object._backingObject
 		if not hasattr(object, self.name):
-			return self.containerClass()
+			return self.memberClass()
 		return getattr(object, self.name)
 
 	def _facadeSetter(self, object, value):
 		# print(f"_facadeSetter({self.name}, {object._backingObject}, {value})")
 		object = object._backingObject
-		assert(isinstance(value, self.containerClass))
+		assert(isinstance(value, self.memberClass))
 		setattr(object, self.name, value)
 
 class DictNodeSchema(NodeSchema):
-	def __init__(self, name, key = None, containerClass = None, itemClass = None):
-		if containerClass is None:
-			if not itemClass:
-				raise ValueError("DictNodeSchema must specifiy either container or item class")
-
-			containerClass = lambda: ConfigDict(itemClass)
-
+	def __init__(self, name, key = None, itemClass = None):
+		containerClass = lambda: ConfigDict(itemClass)
 		super().__init__(name, key, containerClass)
 
 class ListNodeSchema(NodeSchema):
@@ -313,22 +308,22 @@ class ListNodeSchema(NodeSchema):
 		super().__init__(name, key, containerClass)
 
 	def create(self, name):
-		return self.containerClass(name)
+		return self.memberClass(name)
 
 class ParameterNodeSchema(NodeSchema):
 	def __init__(self, name, key = None):
-		super().__init__(name, key, containerClass = dict)
+		super().__init__(name, key, memberClass = dict)
 
 	def update(self, obj, node):
-		container = self.getContainerFor(obj)
+		member = self.getObjectMember(obj)
 		for attr in node.attributes:
-			container[attr.name] = attr.value
+			member[attr.name] = attr.value
 
 	def publish(self, obj, node):
-		container = self.getContainerFor(obj)
+		member = self.getObjectMember(obj)
 
 		child = node.add_child(self.key)
-		for key, value in container.items():
+		for key, value in member.items():
 			child.set_value(key, value)
 
 ##################################################################
