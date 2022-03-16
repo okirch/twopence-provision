@@ -509,50 +509,59 @@ class ConfigOpaque(NamedConfigurable):
 
 	def __init__(self, name, data = None):
 		super().__init__(name)
-		self.data = data or {}
+		self.config = curly.Config()
+		self.tree = self.config.tree()
+
+		if data:
+			for key, value in data.items():
+				self.tree.set_value(key, value)
+
+	@staticmethod
+	def copyCurlyTree(src, dst, noOverride = False):
+		for attr in src.attributes:
+			if noOverride and dst.get_values(attr.name) != []:
+				continue
+			Schema.debug("   %s = %s" % (attr.name, attr.value))
+			# print(f"Copying {attr.name} = {attr.values}")
+			dst.set_value(attr.name, attr.values)
+
+		for srcChild in src:
+			# print(f"Copying child {srcChild.type} {srcChild.name}")
+			dstChild = dst.get_child(srcChild.type, srcChild.name or "")
+			if dstChild is None:
+				if srcChild.name:
+					dstChild = dst.add_child(srcChild.type, srcChild.name)
+				else:
+					dstChild = dst.add_child(srcChild.type)
+			ConfigOpaque.copyCurlyTree(srcChild, dstChild, noOverride)
 
 	def configure(self, config):
-		for attr in config.attributes:
-			Schema.debug("   %s = %s" % (attr.name, attr.value))
-			self.data[attr.name] = attr.value
+		self.copyCurlyTree(config, self.tree, noOverride = True)
 
 	def publish(self, curlyNode):
-		for key, value in self.data.items():
-			curlyNode.set_value(key, value)
+		self.copyCurlyTree(self.tree, curlyNode)
 
 	def items(self):
-		return self.data.items()
+		for attr in self.tree.attributes:
+			yield attr.name, attr.values
 
 	# merge methods
 	def mergeNoOverride(self, other):
-		if self is other:
-			return
-		result = copy.copy(other.data)
-		result.update(self.data)
-		self.data = result
+		if self is not other:
+			self.copyCurlyTree(other.tree, self.tree, noOverride = True)
 
 	def merge(self, other):
-		self.data.update(other)
-
-
-	# methods that implement part of curly.Node so that
-	# we can be passed to Configurable.configure
-	class FakeAttr:
-		def __init__(self, key, value):
-			self.name = key
-			self.value = value
-			self.values = [value]
+		self.copyCurlyTree(other.tree, self.tree)
 
 	@property
 	def attributes(self):
-		for key, value in self.data.items():
-			yield self.FakeAttr(key, value)
+		return self.tree.attributes
 
 	def get_value(self, key):
-		return self.data.get(key)
+		return self.tree.get_value(key)
 
 	def __iter__(self):
-		return iter([])
+		return iter(self.tree)
 
 # This provides a Facade class that is easy to set up
 #
