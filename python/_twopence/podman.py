@@ -700,7 +700,13 @@ exec sleep infinity
 		if instance.image is None:
 			raise ValueError(f"Cannot save instance {instance.name} - don't know original image name")
 
-		outputName = f"{platform.name}:{instance.image.tag}"
+		# Try to copy the version number of the image we're based on.
+		# If that fails for some reason, be lame and use 'latest'.
+		version = 'latest'
+		if ':' in instance.image:
+			version = instance.image.split(':')[1]
+
+		outputName = f"{platform.name}:{version}"
 		outputImage = ImageReference("localhost", outputName)
 
 		existingImage = self.findImage(outputImage)
@@ -713,7 +719,7 @@ exec sleep infinity
 		if not status:
 			raise ValueError(f"{instance.name}: podman package failed {status}")
 
-		info("Created image {outputImage}")
+		info(f"Created image {outputImage}")
 
 		if existingImage:
 			self.runShellCmd(f"sudo podman rmi {existingImage.id}")
