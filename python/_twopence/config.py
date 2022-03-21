@@ -272,31 +272,15 @@ class NodeSchema(Schema):
 		info.append("member=%s" % self.memberClass)
 		return "%s(%s)" % (self.__class__.__name__, ", ".join(info))
 
+	canaryNotSetValue = "deadparrot"
 	def getObjectMember(self, obj):
-		member = getattr(obj, self.name, None)
-		if member is None:
+		member = getattr(obj, self.name, NodeSchema.canaryNotSetValue)
+		if member is NodeSchema.canaryNotSetValue:
 			raise ValueError(f"Node {obj} has no member {self.name}")
 		return member
 
-	def update(self, obj, node):
-		self.debug("Updating %s object's %s by creating %s(%s)" % (
-			obj.__class__.__name__, self.name,
-			node.type, node.name))
-
-		member = self.getObjectMember(obj)
-		item = member.create(node.name)
-		item.configure(node)
-
-		if True:
-			Schema.debug("Defined %s" % item)
-
-	def publish(self, obj, node):
-		self.debug("Publishing %s object's %s" % (obj.__class__.__name__, self.name))
-
-		member = self.getObjectMember(obj)
-		for item in member.values():
-			child = node.add_child(self.key, item.name)
-			item.publish(child)
+	def setObjectMember(self, obj, member):
+		setattr(obj, self.name, member)
 
 	def _facadeGetter(self, object):
 		object = object._backingObject
@@ -310,12 +294,33 @@ class NodeSchema(Schema):
 		assert(isinstance(value, self.memberClass))
 		setattr(object, self.name, value)
 
-class DictNodeSchema(NodeSchema):
+class AggregateNodeSchema(NodeSchema):
+	def __init__(self, name, key, memberClass = None):
+		super().__init__(name, key, memberClass)
+
+	def update(self, obj, node):
+		self.debug(f"Updating {obj.__class__.__name__} object's {self.name} by creating {node.type} {node.name}")
+
+		member = self.getObjectMember(obj)
+		item = member.create(node.name)
+		item.configure(node)
+
+		Schema.debug("Defined %s" % item)
+
+	def publish(self, obj, node):
+		self.debug("Publishing %s object's %s" % (obj.__class__.__name__, self.name))
+
+		member = self.getObjectMember(obj)
+		for item in member.values():
+			child = node.add_child(self.key, item.name)
+			item.publish(child)
+
+class DictNodeSchema(AggregateNodeSchema):
 	def __init__(self, name, key = None, itemClass = None):
 		containerClass = lambda: ConfigDict(itemClass)
 		super().__init__(name, key, containerClass)
 
-class ListNodeSchema(NodeSchema):
+class ListNodeSchema(AggregateNodeSchema):
 	def __init__(self, name, key = None, itemClass = None):
 		containerClass = lambda: ConfigList(itemClass)
 		super().__init__(name, key, containerClass)
