@@ -239,19 +239,6 @@ class ContainerImageListing:
 		return False
 
 
-class ContainerCommand:
-	def __init__(self, datadir, command, *argv):
-		self.datadir = datadir
-		self.command = command
-		self.argv = argv
-
-	def getInvocation(self, mountPoint):
-		if self.datadir:
-			path = os.path.join(mountPoint, self.command)
-		else:
-			path = self.command
-		return " ".join([path] + list(self.argv))
-
 class PodmanInstance(GenericInstance):
 	supportedVolumeTypes = {
 		'tmpfs':	PodmanVolumeTmpfs,
@@ -423,8 +410,7 @@ class PodmanBackend(Backend):
 		runtime = self.prepareRuntime(instance)
 
 		# instance.config gives us a list of scriptlets for provisioning.
-		# We turn these into a set of config.vm.provision blocks for the
-		# Podmanfile
+		# We turn these into a script that we execute in the container
 		provisioning = self.buildProvisioning(instance.config)
 
 		# HACK ATTACK - shortcut for testing
@@ -445,10 +431,15 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 		os.chmod(path, 0o755)
 		# os.system(f"cat {path}")
 
-		command = ContainerCommand(instance.workspace, "provision.sh")
-		self.createSidecar(command.datadir)
+		# Copy twopence-server and all its libraries to /mnt/sidecar
+		self.createSidecar(instance.workspace)
 
-		instance.command = command
+		bindMount = runtime.createVolume("bind", "/mnt")
+		bindMount.source = instance.workspace
+
+		runtime.startup.command = "/mnt/provision.sh"
+		runtime.startup.success = "PodmanDancingMonkey"
+
 		return instance
 
 	def prepareRuntime(self, instance):
@@ -589,17 +580,28 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 
 		argv += ["--name", instance.containerName]
 
-		if instance.command:
-			command = instance.command
-			argv += ["--mount", f"type=bind,src={command.datadir},target=/mnt"]
-			exec = command.getInvocation("/mnt")
-		else:
-			exec = "pause"
+		# The container image ID
 		argv += [str(instance.config.podman.key)]
-		argv.append(exec)
+
+		startup = runtime.startup
+		if startup.command:
+			argv.append(startup.command)
+		else:
+			# FIXME: we might want to make sure that the image defines
+			# an entrypoint
+			pass
+
+		if startup.arguments:
+			argv += startup.arguments
 
 		cmd = " ".join(argv)
-		status = self.runShellCmd(cmd, timeout = timeout, abandonOnString = "PodmanDancingMonkey")
+
+		print(f"Command is {cmd}")
+
+		if startup.success:
+			status = self.runShellCmd(cmd, timeout = timeout, abandonOnString = startup.success)
+		else:
+			raise ConfigError("Please define a startup.success string for this application")
 
 		verbose("Saving output to podman_run.log")
 		instance.saveExecStatus("podman_run.log", status)
