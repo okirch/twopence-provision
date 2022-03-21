@@ -295,7 +295,7 @@ class VagrantBackend(Backend):
 		return node.vagrant
 
 	def createInstance(self, instanceConfig, instanceWorkspace, persistentState):
-		return VagrantInstance(instanceConfig, instanceWorkspace, persistentState)
+		return VagrantInstance(self, instanceConfig, instanceWorkspace, persistentState)
 
 	def detect(self, topology, instances):
 		found = []

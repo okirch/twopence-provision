@@ -205,8 +205,8 @@ class ContainerCommand:
 		return " ".join([path] + list(self.argv))
 
 class PodmanInstance(GenericInstance):
-	def __init__(self, instanceConfig, instanceWorkspace, persistentState, command = None, containerName = None, **kwargs):
-		super().__init__(instanceConfig, instanceWorkspace, persistentState)
+	def __init__(self, backend, instanceConfig, instanceWorkspace, persistentState, command = None, containerName = None, **kwargs):
+		super().__init__(backend, instanceConfig, instanceWorkspace, persistentState)
 		self.container = None
 		self.containerId = None
 		self.containerName = containerName
@@ -311,7 +311,7 @@ class PodmanBackend(Backend):
 		assert(self.testcase)
 		containerName = f"twopence-{self.testcase}-{instanceConfig.name}"
 
-		return PodmanInstance(instanceConfig, instanceWorkspace, persistentState,
+		return PodmanInstance(self, instanceConfig, instanceWorkspace, persistentState,
 					containerName = containerName)
 
 	def detect(self, topology, instances):

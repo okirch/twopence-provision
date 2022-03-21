@@ -20,9 +20,10 @@ import shutil
 # Backends derive from this base class
 ##################################################################
 class GenericInstance(PeristentTestInstance):
-	def __init__(self, instanceConfig, workspace = None, persistentState = None):
+	def __init__(self, backend, instanceConfig, workspace = None, persistentState = None):
 		super().__init__(backingObject = persistentState)
 
+		self.backend = backend
 		self.config = instanceConfig
 		self.workspace = workspace
 
