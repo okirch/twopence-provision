@@ -350,15 +350,35 @@ class PodmanBackend(Backend):
 		if name is None:
 			return None
 
-		print(f"Checking for running container {name}")
+		debug(f"Checking for running container {name}")
 		with os.popen("sudo podman ps -a --format json") as f:
 			data = json.load(f)
 
 		for entry in data:
 			status = ContainerStatus(entry)
 			if name in status.names:
-				print(f"  found {status}")
+				debug(f"  found {status}")
 				return status
+		return None
+
+	def findContainerPID(self, id):
+		if id is None:
+			return None
+
+		debug(f"Checking PID of running container {id}")
+		with os.popen(f"sudo podman container inspect {id}") as f:
+			data = json.load(f)
+
+		if len(data) > 1:
+			error(f"ambiguous data in output of podman container inspect {id}")
+		elif data:
+			entry = data[0]
+			state = entry.get('State')
+			if state:
+				pid = state.get('Pid')
+				if pid:
+					debug(f"  found {pid}")
+					return pid
 		return None
 
 	def identifyImage(self, searchKey):
