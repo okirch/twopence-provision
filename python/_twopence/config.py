@@ -605,6 +605,9 @@ class ConfigOpaque(NamedConfigurable):
 	def get_value(self, key):
 		return self.tree.get_value(key)
 
+	def set_value(self, key, value):
+		self.tree.set_value(key, value)
+
 	def __iter__(self):
 		return iter(self.tree)
 
@@ -1083,7 +1086,8 @@ class Platform(NamedConfigurable):
 	##########################################################
 	def addBackend(self, name, **kwargs):
 		saved = self.backends.create(name)
-		saved.data.update(kwargs)
+		for key, value in kwargs.items():
+			saved.set_value(key, value)
 
 	# FIXME obsolete?
 	def hasBackend(self, name):
