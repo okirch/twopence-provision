@@ -15,6 +15,7 @@ from .logging import *
 from .backend import Backend
 from .runner import Runner
 from .instance import *
+from .runtime import *
 from .provision import *
 from .network import *
 from .container import *
@@ -166,6 +167,52 @@ class PodmanNetwork(ContainerRuntimeNetwork):
 
 		return subnet.makeHostAddrFromSubnet(hostIndex)
 
+class PodmanVolumeTmpfs(RuntimeVolumeTmpfs):
+	def addCommandOptions(self, argv):
+		size = self.size or "512M"
+
+		options = ["type=tmpfs", f"tmpfs-size={size}"]
+		if self.permissions:
+			# Is there a way to display integers in C style octal syntax, but using f strings?
+			options.append("tmpfs-mode=0%o" % self.permissions)
+		options.append(f"destination={self.mountpoint}")
+
+		argv.append("--mount=" + ",".join(options))
+
+class PodmanVolumeBind(RuntimeVolumeBind):
+	def addCommandOptions(self, argv):
+		if self.source is None:
+			raise ValueError("Cannot bind mount {self.mountpoint}: no source directory specified")
+
+		options = ["type=bind", f"src={self.source}", f"target={self.mountpoint}"]
+		argv.append("--mount=" + ",".join(options))
+
+class PodmanVolumeLoop(RuntimeVolumeLoop):
+	def provision(self, instance):
+		# First, create the loop device and put a file system on it
+		super().provision(instance)
+
+		loopdev = self.loopdev
+
+		cmd = f"sudo podman volume create --opt device={loopdev.name} --opt type={self.mkfs}"
+		with os.popen(cmd) as f:
+			loopdev.id = f.read().strip()
+
+		if loopdev.id is None:
+			raise ValueError("Unable to provision podman volume for device={loopdev.name}")
+
+	def addCommandOptions(self, argv):
+		dev = self.loopdev
+		if dev is None or not dev.id:
+			raise ValueError("Cannot mount volume {self.mountpoint}: loop device not set up")
+
+		options = ["type=volume", f"source={dev.id}"]
+		options.append(f"destination={self.mountpoint}")
+		if self.readonly:
+			options.append("ro=true")
+
+		argv.append("--mount=" + ",".join(options))
+
 class ContainerImageListing:
 	def __init__(self):
 		self.images = []
@@ -206,6 +253,12 @@ class ContainerCommand:
 		return " ".join([path] + list(self.argv))
 
 class PodmanInstance(GenericInstance):
+	supportedVolumeTypes = {
+		'tmpfs':	PodmanVolumeTmpfs,
+		'bind':		PodmanVolumeBind,
+		'loopfs':	PodmanVolumeLoop,
+	}
+
 	def __init__(self, backend, instanceConfig, instanceWorkspace, persistentState, command = None, containerName = None, **kwargs):
 		super().__init__(backend, instanceConfig, instanceWorkspace, persistentState)
 		self.container = None
