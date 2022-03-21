@@ -443,7 +443,7 @@ class PodmanBackend(Backend):
 
 		provisioning.append(f'''
 echo "Lift off to the tune of the PodmanDancingMonkey"
-exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
+exec sleep infinity
 ''')
 
 		path = instance.workspacePath("provision.sh")
@@ -454,9 +454,6 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 
 		os.chmod(path, 0o755)
 		# os.system(f"cat {path}")
-
-		# Copy twopence-server and all its libraries to /mnt/sidecar
-		self.createSidecar(instance.workspace)
 
 		bindMount = runtime.createVolume("bind", "/mnt")
 		bindMount.source = instance.workspace
@@ -533,19 +530,6 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 			result.append(formatted)
 
 		return result
-
-	# This is not really a sidecar; I just called it so.
-	# What we do here is copy twopence-test-server and all the shared libs
-	# it requries into a directory, which is then mounted into the container
-	# at runtime.
-	# A statically linked twopence server binary would have been nicer, but
-	# alas we don't have static versions of all its libraries (eg libaudit)
-	def createSidecar(self, datadir):
-		path = os.path.join(datadir, "sidecar")
-		if os.system(f"twopence create-sidecar {path}") != 0:
-			raise ValueError("Failed to create container sidecar for the test server")
-
-		return path
 
 	# FIXME obsolete
 	def buildMachineConfig(self, instanceConfig):
@@ -647,7 +631,7 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 
 		instance.start_time = when
 
-		if instance.config.platform.isApplication:
+		if instance.twopence is None:
 			pid = self.findContainerPID(instance.containerName)
 			if pid is None:
 				raise ConfigError(f"Unable to locate container {instance.containerName}")

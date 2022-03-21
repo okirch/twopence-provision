@@ -43,6 +43,10 @@ class GenericInstance(PeristentTestInstance):
 	def persistent(self):
 		return self._backingObject
 
+	@property
+	def twopence(self):
+		return self._twopence
+
 	def createWorkspace(self):
 		path = self.workspace
 
