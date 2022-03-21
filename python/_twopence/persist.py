@@ -16,6 +16,20 @@ from .logging import *
 from .config import *
 from .runtime import *
 
+class NodeResource(NamedConfigurable):
+	info_attrs = ['name']
+
+class NodeVolumeResource(NodeResource):
+	schema = [
+		StringAttributeSchema('mountpoint'),
+		StringAttributeSchema('fstype'),
+	]
+
+class NodeApplicationResources(Configurable):
+	schema = [
+		DictNodeSchema('_volumes', 'volume', itemClass = NodeVolumeResource),
+	]
+
 class NodeStatus(NamedConfigurable):
 	info_attrs = ['name', 'os', 'ipv4_address', 'ipv6_address']
 
@@ -33,11 +47,14 @@ class NodeStatus(NamedConfigurable):
 		StringAttributeSchema('target'),
 		DictNodeSchema('_built', 'built', itemClass = Platform),
 		DictNodeSchema('_loop_devices', 'loop-device', itemClass = LoopDevice),
+		SingleNodeSchema('application_resources', 'application-resources', itemClass = NodeApplicationResources),
 	]
 
 	def __init__(self, name, config = None):
 		assert(type(name) == str)
 		super().__init__(name)
+
+		self.application_resources = NodeApplicationResources()
 		self._config = config
 
 	def clearNetwork(self):
@@ -129,6 +146,10 @@ class PeristentTestInstance(ConfigFacade):
 	def __init__(self, backingObject):
 		super().__init__(backingObject = backingObject)
 		self._platform = None
+
+	@property
+	def persistent(self):
+		return self._backingObject
 
 	def fromNodeConfig(self, instanceConfig):
 		self.name = instanceConfig.name

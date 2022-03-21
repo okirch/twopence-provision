@@ -193,6 +193,8 @@ class TestTopology(PersistentTestTopology):
 			instance.exists = True
 			instance.running = True
 
+			instance.propagateRuntimeResources()
+
 			self.backend.updateInstanceTarget(instance)
 
 			self.saveStatus()

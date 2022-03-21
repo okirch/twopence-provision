@@ -192,7 +192,11 @@ class RuntimeVolume(Configurable):
 	schema = [
 		# In theory, any volume we mount can have sub-volumes
 		# In practice, a lot depends on the container engine.
-		SingleNodeSchema('subvolumes', 'volumes', itemClass = RuntimeFilesystem)
+		SingleNodeSchema('subvolumes', 'volumes', itemClass = RuntimeFilesystem),
+
+		# A volume that has a provide-as-resource attribute will be
+		# propagated to the Application implementation as a volume resource.
+		StringAttributeSchema('resource_id', 'provide-as-resource'),
 	]
 
 	def __init__(self, mountpoint = None, volumeSet = None):
@@ -208,6 +212,11 @@ class RuntimeVolume(Configurable):
 	# with a file system on it), that should happen inside provision()
 	def provision(self, instance):
 		pass
+
+	# we propagate information on the resources we provisioned to the test case
+	# via status.conf
+	def asResource(self, res):
+		res.mountpoint = self.mountpoint
 
 class RuntimeVolumeTmpfs(RuntimeVolume):
 	info_attrs = RuntimeVolume.info_attrs + ['size', 'permissions']
@@ -240,6 +249,10 @@ class RuntimeVolumeLoop(RuntimeVolume):
 		super().__init__(*args, **kwargs)
 
 		self.loopdev = None
+
+	def asResource(self, res):
+		super().asResource(res)
+		res.fstype = self.mkfs
 
 	def provision(self, instance):
 		debug(f"Provision volume {self}")

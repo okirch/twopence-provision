@@ -184,6 +184,25 @@ class GenericInstance(PeristentTestInstance):
 		assert(self._loop_devices[dev.name] is dev)
 		del self._loop_devices[dev.name]
 
+	def propagateRuntimeResources(self):
+		if not self.runtime:
+			return
+
+		for volume in self.runtime.volumes:
+			# If the volume description specifies an
+			# ID via provide-as-resource, initialize an
+			# application resource that will be saved to
+			# status.conf. From there, it will be picked
+			# up later by the application code.
+			if volume.resource_id:
+				res = self.application_resources._volumes.create(volume.resource_id)
+				volume.asResource(res)
+
+	def addVolumeResource(self, id, mountpoint):
+		volumeResource = self.application_resources._volumes.create(id)
+		volumeResource.mountpoint = mountpoint
+		return volumeResource
+
 	def startTwopenceInContainer(self, pid):
 		twopence = TwopenceService(self.containerName)
 		self._twopence = twopence
