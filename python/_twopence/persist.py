@@ -3,7 +3,7 @@
 # Persist info on the topology between states of provisioning,
 # build, packaging, etc.
 #
-# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+# Copyright (C) 2021, 2022 Olaf Kirch <okir@suse.de>
 #
 ##################################################################
 
@@ -14,6 +14,7 @@ import time
 
 from .logging import *
 from .config import *
+from .runtime import *
 
 class NodeStatus(NamedConfigurable):
 	info_attrs = ['name', 'os', 'ipv4_address', 'ipv6_address']
@@ -30,6 +31,7 @@ class NodeStatus(NamedConfigurable):
 		StringAttributeSchema('start_time', 'start-time'),
 		StringAttributeSchema('target'),
 		DictNodeSchema('_built', 'built', itemClass = Platform),
+		DictNodeSchema('_loop_devices', 'loop-device', itemClass = LoopDevice),
 	]
 
 	def __init__(self, name, config = None):
@@ -40,6 +42,17 @@ class NodeStatus(NamedConfigurable):
 	def clearNetwork(self):
 		self.ipv4_address = None
 		self.ipv6_address = None
+
+	@property
+	def loop_devices(self):
+		return self._loop_devices
+
+	def createLoopDevice(self, name):
+		return self._loop_devices.create(name)
+
+	def addLoopDevice(self, dev):
+		assert(isinstance(dev, LoopDevice))
+		self._loop_devices[dev.name] = dev
 
 class TopologyStatus(Configurable):
 	info_attrs = ['testcase']

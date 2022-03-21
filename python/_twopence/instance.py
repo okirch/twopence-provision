@@ -9,6 +9,7 @@
 from .logging import *
 from .network import *
 from .persist import PeristentTestInstance
+from .runtime import LoopDevice
 
 import time
 import os
@@ -128,6 +129,28 @@ class GenericInstance(PeristentTestInstance):
 
 	def recordTarget(self, target):
 		self.target = target
+
+	@property
+	def loop_devices(self):
+		return self._loop_devices.values()
+
+	def allocateLoopDevice(self):
+		dev = LoopDevice.allocateDevice()
+		if dev.name in self._loop_devices:
+			raise ValueError("Oops, duplicate loop device name {dev.name}")
+		self._loop_devices[dev.name] = dev
+		return dev
+
+	def addLoopDevice(self, dev):
+		assert(isinstance(dev, LoopDevice))
+		self._loop_devices[dev.name] = dev
+
+	def dropLoopDevice(self, dev):
+		if dev.name not in self._loop_devices:
+			return
+
+		assert(self._loop_devices[dev.name] is dev)
+		del self._loop_devices[dev.name]
 
 	def saveLog(self, filename, buffer):
 		with self.openLog(filename) as f:
