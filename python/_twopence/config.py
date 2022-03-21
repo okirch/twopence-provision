@@ -67,6 +67,13 @@ class TypeConversionInt(TypeConversion):
 	def from_string(value):
 		return int(value)
 
+class TypeConversionOctal(TypeConversion):
+	type_name = "oct"
+
+	@staticmethod
+	def from_string(value):
+		return int(value, base = 8)
+
 class TypeConversionFloat(TypeConversion):
 	type_name = "float"
 
@@ -206,6 +213,12 @@ class IntegerAttributeSchema(ScalarAttributeSchema):
 
 	def __init__(self, name, key = None):
 		super().__init__(name, key, typeconv = TypeConversionInt)
+
+class OctalAttributeSchema(ScalarAttributeSchema):
+	default_value = 0
+
+	def __init__(self, name, key = None):
+		super().__init__(name, key, typeconv = TypeConversionOctal)
 
 class FloatAttributeSchema(ScalarAttributeSchema):
 	def __init__(self, name, key = None, default_value = 0.0):
