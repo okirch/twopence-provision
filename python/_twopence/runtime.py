@@ -126,3 +126,201 @@ class TwopenceService:
 		os.system(f"sudo kill -TERM {self.pid}")
 		self.pid = None
 
+##################################################################
+# Helper classes for manipulating the SUTs file system, esp
+# for containers.
+# These classes allow you to track bind mounts, loop mounted
+# devices etc.
+#
+# The backend specific instance class needs to provide a dictionary
+# of supported volumeTypes.
+##################################################################
+class RuntimeFilesystem(Configurable):
+	def __init__(self, volumeTypes = None, parentDirectory = None):
+		self.parentDirectory = parentDirectory
+		self._volumeTypes = volumeTypes
+		self._volumes = {}
+
+	@property
+	def types(self):
+		return self._volumeTypes
+
+	@property
+	def volumes(self):
+		return self._volumes.values()
+
+	def createVolume(self, type, mountpoint, config = None):
+		volumeClass = self._volumeTypes.get(type)
+		if volumeClass is None:
+			raise ConfigError(f"Unable to handle volumes of type {type}")
+
+		debug(f"Creating {type} volume at {mountpoint}")
+		volume = volumeClass(mountpoint = mountpoint, volumeSet = self)
+		if config:
+			volume.configure(config)
+		self.addVolume(volume)
+
+		return volume
+
+	def addVolume(self, volume):
+		if volume.mountpoint in self._volumes:
+			raise ConfigError(f"Duplicate filesystem mount {volume.mountpoint}")
+		self._volumes[volume.mountpoint] = volume
+
+	# do a width-first traversal
+	def traverse(self):
+		result = []
+		for volume in self.volumes:
+			result.append(volume)
+
+		for volume in self.volumes:
+			result += volume.subvolumes.traverse()
+
+		return result
+
+	def configure(self, config):
+		for child in config:
+			path = child.name
+			if self.parentDirectory:
+				path = os.path.join(self.parentDirectory, path)
+
+			self.createVolume(child.type, path, child)
+
+class RuntimeVolume(Configurable):
+	info_attrs = ['mountpoint']
+
+	schema = [
+		# In theory, any volume we mount can have sub-volumes
+		# In practice, a lot depends on the container engine.
+		SingleNodeSchema('subvolumes', 'volumes', itemClass = RuntimeFilesystem)
+	]
+
+	def __init__(self, mountpoint = None, volumeSet = None):
+		super().__init__()
+
+		if not mountpoint.startswith(os.path.sep):
+			raise ConfigError(f"Invalid path \"{mountpoint}\" for runtime volume. Must be absolute")
+		self.mountpoint = mountpoint
+
+		self.subvolumes = RuntimeFilesystem(volumeSet.types, parentDirectory = mountpoint)
+
+	# If any work is required to prepare the volume (eg by creating a loop device volume
+	# with a file system on it), that should happen inside provision()
+	def provision(self, instance):
+		pass
+
+class RuntimeVolumeTmpfs(RuntimeVolume):
+	info_attrs = RuntimeVolume.info_attrs + ['size', 'permissions']
+
+	schema = RuntimeVolume.schema + [
+		StringAttributeSchema('user'),
+		StringAttributeSchema('group'),
+		OctalAttributeSchema('permissions'),
+		StringAttributeSchema('size'),
+	]
+
+class RuntimeVolumeBind(RuntimeVolume):
+	info_attrs = RuntimeVolume.info_attrs + ['source']
+
+	schema = RuntimeVolume.schema + [
+		StringAttributeSchema('source'),
+	]
+
+class RuntimeVolumeLoop(RuntimeVolume):
+	info_attrs = RuntimeVolume.info_attrs + ['size', 'permissions', 'mkfs']
+
+	schema = RuntimeVolume.schema + [
+		OctalAttributeSchema('permissions'),
+		StringAttributeSchema('size'),
+		StringAttributeSchema('mkfs'),
+		BooleanAttributeSchema('readonly'),
+	]
+
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+
+		self.loopdev = None
+
+	def provision(self, instance):
+		debug(f"Provision volume {self}")
+
+		fstype = self.mkfs or "ext4"
+		imgsize = self.size or "1G"
+
+		name = self.mountpoint.replace(os.path.sep, '-')
+		path = os.path.join(instance.workspace, f"image{name}")
+
+		self.makeEmptyImage(path, imgsize)
+
+		loop = instance.allocateLoopDevice()
+		if not loop:
+			os.remove(path)
+			raise ValueError(f"Cannot provision loopfs {self.mountpoint} - no loop device available")
+
+		if not loop.attach(path):
+			os.remove(path)
+			raise ValueError(f"Cannot provision loopfs {self.mountpoint} - failed to attach image {path}")
+
+		self.makeFilesystem(loop.name, fstype)
+		self.loopdev = loop
+
+	unitScales = {
+		"k":	1024,
+		"m":	1024 * 1024,
+		"g":	1024 * 1024 * 1024,
+		"kib":	1024,
+		"mib":	1024 * 1024,
+		"gib":	1024 * 1024 * 1024,
+		"kb":	1000,
+		"mb":	1000 * 1000,
+		"gb":	1000 * 1000 * 1000,
+	}
+
+	def convertSize(self, imgsize):
+		unit = imgsize.lstrip("0123456789.").lower()
+		number = imgsize.lower().rstrip("kmgib")
+		size = float(number)
+
+		scale = self.unitScales.get(unit)
+		if scale is None:
+			raise ConfigError(f"bad unit in image size {imgsize} for loop device {self.mountpoint}")
+
+		return size * scale
+
+	def makeEmptyImage(self, path, imgsize):
+		blockSizes = ["1M", "64K", "1K"]
+
+		size = self.convertSize(imgsize)
+		for bs in blockSizes:
+			bsValue = self.convertSize(bs)
+			if size >= 16 * bsValue:
+				break
+
+		size = int(size / bsValue + 0.5)
+
+		debug(f"Creating image in {path}, {size} blocks of {bs} each")
+		cmd = f"dd if=/dev/zero of={path} bs={bs} count={size}"
+		if os.system(cmd) != 0:
+			error(f"Unable to create loop image at {path} - dd command exited with error")
+			if os.path.exists(path):
+				os.remove(path)
+			raise ValueError("Failed to create image")
+
+	def setupLoopDevice(self, path):
+		with os.popen("sudo losetup --find") as f:
+			device = f.read().strip()
+
+		if not device:
+			return None
+
+		cmd = f"sudo losetup {device} {path}"
+		if os.system(cmd) != 0:
+			error(f"Unable to set up loop device {device} with {path} - losetup command exited with error")
+			return None
+
+	def makeFilesystem(self, device, fstype):
+		info(f"Creating {fstype} file system at {device}")
+		cmd = f"sudo mkfs -t {fstype} {device}"
+		if os.system(cmd) != 0:
+			error(f"Unable to format loop image at {device} - mkfs command exited with error")
+			raise ValueError("Failed to create image")

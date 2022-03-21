@@ -9,7 +9,7 @@
 from .logging import *
 from .network import *
 from .persist import PeristentTestInstance
-from .runtime import LoopDevice, TwopenceService
+from .runtime import LoopDevice, TwopenceService, RuntimeFilesystem
 
 import time
 import os
@@ -20,6 +20,8 @@ import shutil
 # Backends derive from this base class
 ##################################################################
 class GenericInstance(PeristentTestInstance):
+	supportedVolumeTypes = {}
+
 	def __init__(self, backend, instanceConfig, workspace = None, persistentState = None):
 		super().__init__(backingObject = persistentState)
 
@@ -31,6 +33,8 @@ class GenericInstance(PeristentTestInstance):
 
 		self.running = False
 		self.networkInterfaces = []
+
+		self.runtime = None
 
 		self.fromNodeConfig(instanceConfig)
 
@@ -64,6 +68,24 @@ class GenericInstance(PeristentTestInstance):
 		if os.path.exists(self.workspace):
 			shutil.rmtree(self.workspace)
 		self.exists = False
+
+	def createRuntime(self):
+		if self.runtime is None:
+			self.runtime = GenericInstanceRuntime(self.supportedVolumeTypes)
+		return self.runtime
+
+	def destroyRuntime(self):
+		dropped = []
+		for dev in self.loop_devices:
+			debug(f"About to destroy {dev}")
+			if dev.id is not None:
+				self.backend.destroyVolume(dev.id)
+				dev.id = None
+			dev.destroy()
+			dropped.append(dev)
+
+		for dev in dropped:
+			self.dropLoopDevice(dev)
 
 	def addNetworkInterface(self, af, address, prefix_len = None):
 		af = int(af)
@@ -200,3 +222,36 @@ class GenericInstance(PeristentTestInstance):
 	def openLog(self, filename):
 		path = os.path.join(self.workspace, filename)
 		return open(path, "w")
+
+##################################################################
+# Generic runtime information for SUTs
+# Not all backends support all features
+##################################################################
+class GenericInstanceRuntime:
+	def __init__(self, volumeTypes):
+		self.security = None
+		self.startup = None
+		self._filesystem = RuntimeFilesystem(volumeTypes)
+		self._sysctls = {}
+
+	def configureVolumes(self, config):
+		self._filesystem.configure(config)
+
+	@property
+	def volumes(self):
+		return self._filesystem.traverse()
+
+	def createVolume(self, type, mountpoint):
+		return self._filesystem.createVolume(type, mountpoint)
+
+	def addVolume(self, volume):
+		if volume.mountpoint in self._volumes:
+			raise ConfigError(f"Duplicate filesystem mount {volume.mountpoint}")
+		self._volumes[volume.mountpoint] = volume
+
+	def setSysctl(self, key, value):
+		self._sysctls[key] = value
+
+	@property
+	def sysctls(self):
+		return self._sysctls.items()

@@ -223,6 +223,8 @@ class TestTopology(PersistentTestTopology):
 		for instance in self.instances:
 			self.backend.destroyInstance(instance)
 
+			instance.destroyRuntime()
+
 			if instance.persistent:
 				self.persistentState.dropNode(instance.persistent)
 

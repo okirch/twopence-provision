@@ -35,3 +35,6 @@ class Backend(Configurable):
 	# The info argument is a Config.SavedBackendConfig object
 	def renderPlatformInformation(self, info):
 		return []
+
+	def destroyVolume(self, volumeID):
+		pass
