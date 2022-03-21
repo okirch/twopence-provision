@@ -255,6 +255,7 @@ class PodmanInstance(GenericInstance):
 		self.raw_state = None
 
 		self.autoremove = False
+		self.target = None
 
 	def setContainerState(self, status):
 		self.container = status
@@ -423,6 +424,9 @@ class PodmanBackend(Backend):
 		return True
 
 	def prepareInstance(self, instance):
+		# applications are handled by prepareApplication
+		assert(not instance.config.platform.isApplication)
+
 		for stage in instance.config.cookedStages():
 			if stage.reboot:
 				raise ConfigError(f"Cannot provision node {instance.config.name} - stage {stage} would require a reboot")
@@ -459,6 +463,16 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 
 		runtime.startup.command = "/mnt/provision.sh"
 		runtime.startup.success = "PodmanDancingMonkey"
+
+		return instance
+
+	def prepareApplication(self, instance):
+		if instance.config.cookedStages():
+			warning("It appears that {instance.config.name} specifies one or more build stages.")
+			warning("Application images cannot be modified by twopence")
+
+		print(instance.config.platform)
+		self.prepareRuntime(instance)
 
 		return instance
 
@@ -533,6 +547,7 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 
 		return path
 
+	# FIXME obsolete
 	def buildMachineConfig(self, instanceConfig):
 		def format_string_attr(ruby_var_name, attr_name):
 			object = instanceConfig
@@ -631,18 +646,28 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 			return False
 
 		instance.start_time = when
+
+		if instance.config.platform.isApplication:
+			pid = self.findContainerPID(instance.containerName)
+			if pid is None:
+				raise ConfigError(f"Unable to locate container {instance.containerName}")
+
+			instance.startTwopenceInContainer(pid)
+
 		return True
 
 	def updateInstanceTarget(self, instance):
-		target = None
-
 		if instance.exists:
+			if instance.target is not None:
+				return
+
 			addr = instance.getFirstNetworkAddress(Network.AF_IPv4)
 			if addr:
 				# hard-coded for now
-				target = "tcp:%s:4000" % addr
+				instance.target = "tcp:%s:4000" % addr
+				return
 
-		instance.recordTarget(target)
+		instance.target = None
 
 	def detectInstanceState(self, instance):
 		running = self.findContainer(instance.containerName)

@@ -181,7 +181,7 @@ class AttributeSchema(Schema):
 			if type(value) == set:
 				value = list(value)
 
-			Schema.debug("   %s = %s" % (self.key, value))
+			Schema.debug(f"   {self.key} = {value}/{type(value)}")
 			config.set_value(self.key, value)
 
 	def _facadeGetter(self, object):
@@ -237,7 +237,12 @@ class ListAttributeSchema(AttributeSchema):
 
 			current = getattr(obj, self.name)
 			assert(type(current) == list)
-			setattr(obj, self.name, current + values)
+
+			current = copy.copy(current)
+			for item in values:
+				if item not in current:
+					current.append(item)
+			setattr(obj, self.name, current)
 
 class SetAttributeSchema(AttributeSchema):
 	default_value = set()
@@ -354,6 +359,7 @@ class ListNodeSchema(AggregateNodeSchema):
 	def create(self, name):
 		return self.memberClass(name)
 
+# This is really a dict of strings
 class ParameterNodeSchema(NodeSchema):
 	def __init__(self, name, key = None):
 		super().__init__(name, key, memberClass = dict)
@@ -479,7 +485,7 @@ class Configurable(object):
 			if not value:
 				continue
 			if attr_name == 'name':
-				info.append(value)
+				info.append(str(value))
 			else:
 				info.append("%s=%s" % (attr_name, value))
 		return "%s(%s)" % (self.__class__.__name__, ", ".join(info))
@@ -546,7 +552,7 @@ class ConfigDict(dict):
 class ConfigOpaque(NamedConfigurable):
 	info_attrs = ['name']
 
-	def __init__(self, name, data = None):
+	def __init__(self, name = None, data = None):
 		super().__init__(name)
 		self.config = curly.Config()
 		self.tree = self.config.tree()
@@ -1493,10 +1499,6 @@ class FinalNodeConfig(EmptyNodeConfig):
 			self.buildResult.resources += build.resources
 			self.buildResult._applied_build_options.add(build.name)
 
-			# override any backend specific settings from the build
-			# option
-			self.backends.merge(build.backends)
-
 	def mergePlatformOrBuild(self, p):
 		if p.base_platforms is not None:
 			for base in p.base_platforms:
@@ -2213,6 +2215,16 @@ class RequirementsManager(object):
 				self.catalog.saveResponse(req.name, response)
 
 		return response
+
+##################################################################
+# debug helper
+##################################################################
+def dumpBackendDict(who, backends):
+	if backends:
+		print(f"{who} defines backends")
+		for b in backends.values():
+			print(f"  {b.name}")
+			b.config.save("/dev/stdout")
 
 ##################################################################
 # This must happen at the very end of the file:

@@ -255,9 +255,6 @@ class VagrantNodeConfig(Configurable):
 		Schema.FloatAttribute('timeout', default_value = 120),
 	]
 
-	def __init__(self):
-		super().__init__()
-
 class VagrantBackend(Backend):
 	name = "vagrant"
 

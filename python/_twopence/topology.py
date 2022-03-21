@@ -136,7 +136,11 @@ class TestTopology(PersistentTestTopology):
 			# This throws an exception in case of errors
 			instance.createWorkspace()
 
-			self.backend.prepareInstance(instance)
+			if instance.config.platform.isApplication:
+				self.backend.prepareApplication(instance)
+			else:
+				self.backend.prepareInstance(instance)
+
 			if instance.exists:
 				error("Ouch, instance %s seems to exist" % instance.name)
 				success = False
@@ -197,6 +201,8 @@ class TestTopology(PersistentTestTopology):
 
 	def stop(self, **kwargs):
 		for instance in self.instances:
+			instance.stopTwopence()
+
 			self.backend.stopInstance(instance, **kwargs)
 			self.backend.updateInstanceTarget(instance)
 

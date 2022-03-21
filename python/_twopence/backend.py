@@ -36,5 +36,8 @@ class Backend(Configurable):
 	def renderPlatformInformation(self, info):
 		return []
 
+	def prepareApplication(self, instance):
+		raise NotImplementedError(f"The {self.name} backend does not support application images")
+
 	def destroyVolume(self, volumeID):
 		pass

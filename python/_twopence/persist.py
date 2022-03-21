@@ -26,6 +26,7 @@ class NodeStatus(NamedConfigurable):
 		ListAttributeSchema('resources'),
 		StringAttributeSchema('vendor'),
 		StringAttributeSchema('os'),
+		StringAttributeSchema('application'),
 		StringAttributeSchema('keyfile'),
 		StringAttributeSchema('image'),
 		StringAttributeSchema('start_time', 'start-time'),
@@ -138,6 +139,8 @@ class PeristentTestInstance(ConfigFacade):
 		if platform:
 			self.vendor = platform.vendor
 			self.os = platform.os
+			if platform.isApplication:
+				self.application = platform.id
 
 		# This is a bit complicated, but the reason is this
 		# For every stage of twopence-provision, we have to reload

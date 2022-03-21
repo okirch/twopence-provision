@@ -37,6 +37,7 @@ class GenericInstance(PeristentTestInstance):
 		self.runtime = None
 
 		self.fromNodeConfig(instanceConfig)
+		self._twopence = None
 
 	@property
 	def persistent(self):
@@ -122,6 +123,10 @@ class GenericInstance(PeristentTestInstance):
 			if nif.family == af:
 				return nif.address
 		return None
+
+	def getHostAddress(self):
+		# We should get smarter than that. A lot.
+		return "localhost";
 
 	def maybeSaveKey(self, platform):
 		savedPath = self.keyfile
