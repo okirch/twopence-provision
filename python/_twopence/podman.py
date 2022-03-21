@@ -531,29 +531,6 @@ exec sleep infinity
 
 		return result
 
-	# FIXME obsolete
-	def buildMachineConfig(self, instanceConfig):
-		def format_string_attr(ruby_var_name, attr_name):
-			object = instanceConfig
-			for n in attr_name.split('.'):
-				object = getattr(object, n, None)
-				if object is None:
-					return
-
-			assert(type(object) == str)
-			result.append("%s = '%s'" % (ruby_var_name, object))
-
-		result = []
-		format_string_attr("config.vm.box", "podman.image")
-		format_string_attr("config.vm.hostname", "name")
-		format_string_attr("config.ssh.private_key_path", "keyfile")
-		format_string_attr("twopence_platform", "platform.name")
-		format_string_attr("twopence_vendor", "platform.vendor")
-		format_string_attr("twopence_os", "platform.os")
-		format_string_attr("twopence_arch", "platform.arch")
-
-		return result
-
 	def startInstance(self, instance):
 		if instance.running:
 			error(f"Cannot start instance {instance.name} - already running")
