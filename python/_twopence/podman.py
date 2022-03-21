@@ -468,7 +468,6 @@ exec sleep infinity
 			warning("It appears that {instance.config.name} specifies one or more build stages.")
 			warning("Application images cannot be modified by twopence")
 
-		print(instance.config.platform)
 		self.prepareRuntime(instance)
 
 		return instance
@@ -496,6 +495,9 @@ exec sleep infinity
 		sysctl = runtimeConfig.sysctl
 		if sysctl:
 			for key, value in sysctl.items():
+				if type(value) == list:
+					assert(len(value) == 1)
+					value = value[0]
 				runtime.setSysctl(key, value)
 
 		return runtime
@@ -570,9 +572,8 @@ exec sleep infinity
 		for volume in runtime.volumes:
 			volume.addCommandOptions(argv)
 
-		# This is an ugly hack to allow ping to work
-		# It might be nice to make this configurable somewhere...
-		argv += ["--sysctl net.ipv4.ping_group_range='0 2147483647'"]
+		for key, value in runtime.sysctls:
+			argv += [f"--sysctl {key}='{value}'"]
 
 		argv += ["--name", instance.containerName]
 
