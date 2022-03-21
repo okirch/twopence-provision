@@ -1574,14 +1574,6 @@ class Catalog:
 
 					yield self._fileContentClass(de.path)
 
-	def xxxload(self, filename):
-		filename = self.locateConfig(filename)
-		if filename is None:
-			return False
-
-		self.configureFromPath(filename)
-		return True
-
 	# Given a config file name (foo.conf) try to locate the
 	# file in a number of places.
 	# Note that user directories (added by Config.addDirectory()) take
