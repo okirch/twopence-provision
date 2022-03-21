@@ -349,7 +349,8 @@ class SingleNodeSchema(NodeSchema):
 		self.debug(f"Publishing {obj.__class__.__name__} object's {self.name}")
 		member = self.getObjectMember(obj)
 		if member is not None:
-			member.publish(node)
+			child = node.add_child(self.key)
+			member.publish(child)
 
 class ListNodeSchema(AggregateNodeSchema):
 	def __init__(self, name, key = None, itemClass = None):
