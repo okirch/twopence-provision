@@ -320,6 +320,32 @@ class DictNodeSchema(AggregateNodeSchema):
 		containerClass = lambda: ConfigDict(itemClass)
 		super().__init__(name, key, containerClass)
 
+class SingleNodeSchema(NodeSchema):
+	def __init__(self, name, key = None, itemClass = None):
+		super().__init__(name, key, itemClass)
+
+	def initialize(self, obj):
+		setattr(obj, self.name, None)
+
+	def update(self, obj, node):
+		self.debug(f"Updating {obj.__class__.__name__} object's {self.name} by creating {node.type} {node.name}")
+
+		if node.name:
+			raise ConfigError(f"Invalid {node.type} node has name {node.name} (defined in {node.origin})")
+
+		member = self.getObjectMember(obj)
+		if member is None:
+			member = self.memberClass()
+			self.setObjectMember(obj, member)
+
+		member.configure(node)
+
+	def publish(self, obj, node):
+		self.debug(f"Publishing {obj.__class__.__name__} object's {self.name}")
+		member = self.getObjectMember(obj)
+		if member is not None:
+			member.publish(node)
+
 class ListNodeSchema(AggregateNodeSchema):
 	def __init__(self, name, key = None, itemClass = None):
 		containerClass = lambda: ConfigList(itemClass)
