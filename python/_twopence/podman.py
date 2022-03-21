@@ -17,6 +17,7 @@ from .runner import Runner
 from .instance import *
 from .provision import *
 from .network import *
+from .container import *
 from .config import Config, Configurable, ConfigError, Schema
 from .util import DottedNumericVersion
 
@@ -252,27 +253,6 @@ class PodmanInstance(GenericInstance):
 
 		return self.containerId[:12]
 
-class PodmanNodeConfig(Configurable):
-	info_attrs = ['registry', 'image', 'timeout']
-
-	schema = [
-		Schema.StringAttribute('image'),
-		Schema.StringAttribute('registry'),
-		Schema.FloatAttribute('timeout', default_value = 120),
-	]
-
-	def __init__(self):
-		super().__init__()
-		# currently, we do not support specifying a concrete version
-		# in the config file. We just record this information when
-		# deciding on the exact image to use, so that it can be
-		# saved if needed
-		self.version = None
-
-	@property
-	def key(self):
-		return ImageReference(self.registry, self.image)
-
 class PodmanBackend(Backend):
 	name = "podman"
 
@@ -304,7 +284,7 @@ class PodmanBackend(Backend):
 		except:
 			pass
 
-		node.podman = PodmanNodeConfig()
+		node.podman = ContainerNodeConfig()
 		return node.podman
 
 	def createInstance(self, instanceConfig, instanceWorkspace, persistentState):
