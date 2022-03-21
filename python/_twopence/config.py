@@ -1025,6 +1025,7 @@ class Platform(NamedConfigurable):
 		ListAttributeSchema('_base_platforms', 'use-base-platforms'),
 		StringAttributeSchema('keyfile', 'ssh-keyfile'),
 		StringAttributeSchema('build_time', 'build-time'),
+		StringAttributeSchema('built_from', 'built-from'),
 		ListAttributeSchema('install'),
 		ListAttributeSchema('start'),
 		ListAttributeSchema('_always_build', 'always-build'),
@@ -1549,6 +1550,7 @@ class FinalNodeConfig(EmptyNodeConfig):
 		result._base_platforms.insert(0, base.name)
 		result._applied_build_options.update(base._applied_build_options)
 		result.updateFeatures(self.features)
+		result.built_from = base.name
 
 		self.buildResult = result
 		return result
