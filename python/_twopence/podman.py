@@ -418,7 +418,9 @@ class PodmanBackend(Backend):
 	def prepareInstance(self, instance):
 		for stage in instance.config.cookedStages():
 			if stage.reboot:
-				raise ConfigError(f"Cannot provision node {instanceConfig.name} - stage {stage} would require a reboot")
+				raise ConfigError(f"Cannot provision node {instance.config.name} - stage {stage} would require a reboot")
+
+		runtime = self.prepareRuntime(instance)
 
 		# instance.config gives us a list of scriptlets for provisioning.
 		# We turn these into a set of config.vm.provision blocks for the
@@ -448,6 +450,33 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 
 		instance.command = command
 		return instance
+
+	def prepareRuntime(self, instance):
+		runtime = instance.createRuntime()
+		runtime.startup = ContainerStartupConfig()
+
+		runtimeConfig = instance.config.podman.runtime
+		if runtimeConfig is None:
+			return runtime
+
+		if runtimeConfig.volumes:
+			runtime.configureVolumes(runtimeConfig.volumes)
+
+			for volume in runtime.volumes:
+				volume.provision(instance)
+
+		runtime.security = runtimeConfig.security
+
+		if runtimeConfig.startup:
+			runtime.startup = runtimeConfig.startup
+		debug(f"ARGUMENTS {runtime.startup.arguments}")
+
+		sysctl = runtimeConfig.sysctl
+		if sysctl:
+			for key, value in sysctl.items():
+				runtime.setSysctl(key, value)
+
+		return runtime
 
 	def createInstanceWorkspace(self, workspace, instanceConfig):
 		assert(workspace)
@@ -517,13 +546,16 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 
 	def startInstance(self, instance):
 		if instance.running:
-			print("Cannot start instance %s - already running" % instance.name)
+			error(f"Cannot start instance {instance.name} - already running")
 			return False
+
+		runtime = instance.runtime
+		debug(f"runtime is {runtime}")
 
 		when = time.ctime()
 		timeout = instance.config.podman.timeout or 120
 
-		print("Starting %s instance (timeout = %d)" % (instance.name, timeout))
+		info(f"Starting {instance.name} instance (timeout = {timeout})")
 		argv = ["sudo", "podman", "run"]
 
 		if instance.autoremove:
@@ -542,6 +574,14 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 		if False:
 			argv += ["--expose", "4000"]
 			argv += ["--publish", "4000"]
+
+		if runtime.security:
+			sec = runtime.security
+			if sec.privileged:
+				argv += ["--privileged"]
+
+		for volume in runtime.volumes:
+			volume.addCommandOptions(argv)
 
 		# This is an ugly hack to allow ping to work
 		# It might be nice to make this configurable somewhere...
@@ -637,6 +677,12 @@ exec /mnt/sidecar/twopence-test-server --port-tcp 4000 >/dev/null 2>/dev/null
 		instance.dead = True
 
 		return True
+
+	def destroyVolume(self, volumeID):
+		if not volumeID:
+			return
+
+		self.runShellCmd(f"sudo podman volume rm {volumeID}")
 
 	def saveInstanceImage(self, instance, platform):
 		if instance.containerId is None:
