@@ -63,3 +63,66 @@ class LoopDevice(NamedConfigurable):
 			os.remove(self.image)
 		return ok
 
+##################################################################
+# Helper class for wrapping information on how the twopence
+# service was provisioned to the SUT.
+##################################################################
+class TwopenceService:
+	def __init__(self, name):
+		self.name = name
+		self._run_dir = None
+		self._status_file = None
+		self.pid = None
+		self.portType = None
+		self.portName = None
+
+	@property
+	def run_dir(self):
+		if self._run_dir is None:
+			uid = os.getuid()
+
+			dir = f"/run/user/{uid}/twopence"
+			if not os.path.isdir(dir):
+				os.makedirs(dir)
+
+			self._run_dir = dir
+		return self._run_dir
+
+	@property
+	def status_file(self):
+		if self._status_file is None:
+			self._status_file = os.path.join(self.run_dir, f"{self.name}.status")
+		return self._status_file
+
+	@property
+	def log_file(self):
+		return os.path.join(self.run_dir, f"{self.name}.log")
+
+	def processStatusFile(self):
+		if self._status_file is None:
+			return
+
+		with open(self._status_file) as f:
+			for line in f.readlines():
+				w = line.split()
+				if not w:
+					continue
+				key, value = w
+				if key == 'pid':
+					self.pid = value
+				elif key == 'port-type':
+					self.portType = value
+				elif key == 'port-name':
+					self.portName = value
+
+		assert(self.pid)
+		assert(self.portType)
+
+	def stop(self):
+		if not self.pid:
+			return
+
+		info(f"Stopping twopence service running at pid {self.pid}")
+		os.system(f"sudo kill -TERM {self.pid}")
+		self.pid = None
+
