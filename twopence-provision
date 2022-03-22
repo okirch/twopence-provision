@@ -389,21 +389,22 @@ class ActionLogin(Action):
 		node = status.getNodeState(self.node)
 
 		# We should really use nsenter here.
-		if status.backendName == 'podman':
+		if status.backendName == 'vagrant':
+			# The backend should really store the name of the default
+			# account in status.conf
+			self.performSSH(node, user = 'vagrant')
+		elif status.backendName == 'podman':
+			self.performNsEnter(node)
+		else:
 			raise ValueError(f"Cannot login to a container handled by backend {status.backendName}")
 
+	def performSSH(self, node, user):
 		if self.use_ipv4:
 			address = node.ipv4_address
 		elif self.use_ipv6:
 			address = node.ipv6_address
 		else:
 			address = node.ipv4_address or node.ipv6_address
-
-		# The backend should really store the name of the default
-		# account in status.conf
-		user = None
-		if status.backendName == 'vagrant':
-			user = 'vagrant'
 
 		if not user:
 			raise ValueError("Unable to determine login user name")
@@ -418,13 +419,28 @@ class ActionLogin(Action):
 		if node.keyfile:
 			command += ["-i", node.keyfile]
 
-
 		command.append("%s@%s" % (user, address))
+		self.doit(address, command)
 
-		cmdline = " ".join(command)
-		print("Now connect to %s" % address)
-		print("  %s" % cmdline)
-		os.system(cmdline)
+	def performNsEnter(self, node):
+		container = node.container
+		if not container.pid:
+			raise ValueError(f"Cannot log into {node.name}: no container pid provided")
+
+		command = f"nsenter -a -t {container.pid}"
+		self.doit(container.name, command, sudo = True)
+
+	def doit(self, name, command, sudo = False):
+		if type(command) == list:
+			command = " ".join(command)
+
+		if sudo:
+			command = "sudo " + command
+
+		print("Now connect to %s" % name)
+		print("  %s" % command)
+		os.system(command)
+		print("Done.")
 
 class ActionPlatform(BasicAction):
 	def __init__(self, args):

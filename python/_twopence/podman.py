@@ -609,12 +609,17 @@ exec sleep infinity
 
 		instance.start_time = when
 
-		if instance.twopence is None:
-			pid = self.findContainerPID(instance.containerName)
-			if pid is None:
-				raise ConfigError(f"Unable to locate container {instance.containerName}")
+		# persist relevant info on the container
+		containerInfo = instance.containerInfo
 
-			instance.startTwopenceInContainer(pid)
+		containerInfo.name = instance.containerName
+		containerInfo.pid = self.findContainerPID(instance.containerName)
+		if containerInfo.pid is None:
+			raise ConfigError(f"Unable to locate container {instance.containerName}")
+		# FIXME: we could also store the ID of the container process in containerInfo.id
+
+		if instance.twopence is None:
+			instance.startTwopenceInContainer(containerInfo.pid)
 
 		return True
 

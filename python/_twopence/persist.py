@@ -30,6 +30,13 @@ class NodeApplicationResources(Configurable):
 		DictNodeSchema('_volumes', 'volume', itemClass = NodeVolumeResource),
 	]
 
+class NodeContainerStatus(Configurable):
+	schema = [
+		StringAttributeSchema('name'),
+		StringAttributeSchema('id'),
+		IntegerAttributeSchema('pid'),
+	]
+
 class NodeStatus(NamedConfigurable):
 	info_attrs = ['name', 'os', 'ipv4_address', 'ipv6_address']
 
@@ -48,6 +55,7 @@ class NodeStatus(NamedConfigurable):
 		DictNodeSchema('_built', 'built', itemClass = Platform),
 		DictNodeSchema('_loop_devices', 'loop-device', itemClass = LoopDevice),
 		SingleNodeSchema('application_resources', 'application-resources', itemClass = NodeApplicationResources),
+		SingleNodeSchema('_container', 'container', itemClass = NodeContainerStatus),
 	]
 
 	def __init__(self, name, config = None):
@@ -71,6 +79,12 @@ class NodeStatus(NamedConfigurable):
 	def addLoopDevice(self, dev):
 		assert(isinstance(dev, LoopDevice))
 		self._loop_devices[dev.name] = dev
+
+	@property
+	def container(self):
+		if self._container is None:
+			self._container = NodeContainerStatus()
+		return self._container
 
 class TopologyStatus(Configurable):
 	info_attrs = ['testcase']

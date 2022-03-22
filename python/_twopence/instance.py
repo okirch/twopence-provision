@@ -47,6 +47,10 @@ class GenericInstance(PeristentTestInstance):
 	def twopence(self):
 		return self._twopence
 
+	@property
+	def containerInfo(self):
+		return self.persistent.container
+
 	def createWorkspace(self):
 		path = self.workspace
 
