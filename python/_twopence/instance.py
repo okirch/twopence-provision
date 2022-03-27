@@ -188,6 +188,10 @@ class GenericInstance(PeristentTestInstance):
 		assert(self._loop_devices[dev.name] is dev)
 		del self._loop_devices[dev.name]
 
+	def createEmptyBind(self, name):
+		name = name.strip('/').replace('/', '_')
+		return os.path.join(self.workspace, 'bind', name)
+
 	def propagateRuntimeResources(self):
 		if not self.runtime:
 			return

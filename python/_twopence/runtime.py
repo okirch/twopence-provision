@@ -233,7 +233,23 @@ class RuntimeVolumeBind(RuntimeVolume):
 
 	schema = RuntimeVolume.schema + [
 		StringAttributeSchema('source'),
+		OctalAttributeSchema('permissions'),
 	]
+
+	def asResource(self, res):
+		super().asResource(res)
+		res.host_path = self.source
+
+	def provision(self, instance):
+		if self.source is not None:
+			return
+
+		path = instance.createEmptyBind(self.mountpoint)
+		debug(f"Provision volume {self} from {path}")
+		if not os.path.isdir(path):
+			os.makedirs(path, self.permissions or 0o755)
+
+		self.source = path
 
 class RuntimeVolumeLoop(RuntimeVolume):
 	info_attrs = RuntimeVolume.info_attrs + ['size', 'permissions', 'mkfs']
