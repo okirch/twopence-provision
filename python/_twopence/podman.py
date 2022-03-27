@@ -486,6 +486,9 @@ exec sleep infinity
 			for volume in runtime.volumes:
 				volume.provision(instance)
 
+		if runtimeConfig.ports:
+			runtime.configurePorts(runtimeConfig.ports)
+
 		runtime.security = runtimeConfig.security
 
 		if runtimeConfig.startup:
@@ -571,6 +574,10 @@ exec sleep infinity
 
 		for volume in runtime.volumes:
 			volume.addCommandOptions(argv)
+
+		for port in runtime.ports:
+			if port.publish:
+				argv += ["--publish", str(port.publish) ]
 
 		for key, value in runtime.sysctls:
 			argv += [f"--sysctl {key}='{value}'"]

@@ -127,6 +127,82 @@ class TwopenceService:
 		self.pid = None
 
 ##################################################################
+# Helper classes for manipulating the SUTs port space, esp
+# for containers.
+##################################################################
+class RuntimePort(NamedConfigurable):
+	info_attrs = ['port', 'protocol']
+
+	schema = [
+		StringAttributeSchema('publish'),
+		StringAttributeSchema('resource_id', 'provide-as-resource'),
+	]
+
+	def __init__(self, name):
+		super().__init__(name)
+
+		try:
+			portNumber, proto = self.parsePort(name)
+		except:
+			raise ConfigError(f"Failed to parse port name \"{name}\" - should be <service>/<protocol>")
+
+		self.port = portNumber
+		self.protocol = proto
+
+	def __str__(self):
+		return f"{self.port}/{self.protocol}"
+
+	# we propagate information on the resources we provisioned to the test case
+	# via status.conf
+	def asResource(self, res):
+		res.protocol = self.protocol
+		res.internal_port = self.port
+		res.external_port = self.publish
+
+	@staticmethod
+	def parsePort(name):
+		if '/' in name:
+			service, proto = name.split('/')
+		else:
+			service, proto = name, 'tcp'
+
+		proto = proto.lower()
+		assert(proto in ('tcp', 'udp', 'sctp'))
+
+		if service.isdigit():
+			portNumber = int(service)
+		else:
+			import socket
+
+			try:
+				portNumber = socket.getservbyname(service, proto)
+			except Exception as e:
+				twopence.error(f"getservbyname does not know service {service}/{proto}")
+				raise
+
+		return portNumber, proto
+
+class RuntimePorts(Configurable):
+	schema = [
+		DictNodeSchema('_ports', 'port', itemClass = RuntimePort),
+	]
+
+	def __iter__(self):
+		return iter(self._ports.values())
+
+	@staticmethod
+	def _portKey(self, port, protocol):
+		return f"{port}/{protocol}"
+
+	def createPort(self, port, protocol):
+		key = self._portKey(port, protocol)
+		result = self._ports.get(key)
+		if result is None:
+			result = RuntimePort(port, protocol)
+			self._ports[key] = result
+		return result
+
+##################################################################
 # Helper classes for manipulating the SUTs file system, esp
 # for containers.
 # These classes allow you to track bind mounts, loop mounted

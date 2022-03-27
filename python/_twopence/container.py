@@ -42,6 +42,7 @@ class ContainerRuntimeConfig(Configurable):
 		SingleNodeSchema('security', itemClass = ContainerSecurityConfig),
 		SingleNodeSchema('startup', itemClass = ContainerStartupConfig),
 		SingleNodeSchema('volumes', itemClass = ConfigOpaque),
+		SingleNodeSchema('ports', itemClass = ConfigOpaque),
 		SingleNodeSchema('sysctl', itemClass = ConfigOpaque),
 	]
 

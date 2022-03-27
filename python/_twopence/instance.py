@@ -9,7 +9,7 @@
 from .logging import *
 from .network import *
 from .persist import PeristentTestInstance
-from .runtime import LoopDevice, TwopenceService, RuntimeFilesystem
+from .runtime import LoopDevice, TwopenceService, RuntimeFilesystem, RuntimePorts
 
 import time
 import os
@@ -206,6 +206,11 @@ class GenericInstance(PeristentTestInstance):
 				res = self.application_resources._volumes.create(volume.resource_id)
 				volume.asResource(res)
 
+		for port in self.runtime.ports:
+			if port.resource_id:
+				res = self.application_resources._ports.create(port.resource_id)
+				port.asResource(res)
+
 	def addVolumeResource(self, id, mountpoint):
 		volumeResource = self.application_resources._volumes.create(id)
 		volumeResource.mountpoint = mountpoint
@@ -268,14 +273,22 @@ class GenericInstanceRuntime:
 		self.security = None
 		self.startup = None
 		self._filesystem = RuntimeFilesystem(volumeTypes)
+		self._ports = RuntimePorts()
 		self._sysctls = {}
 
 	def configureVolumes(self, config):
 		self._filesystem.configure(config)
 
+	def configurePorts(self, config):
+		self._ports.configure(config)
+
 	@property
 	def volumes(self):
 		return self._filesystem.traverse()
+
+	@property
+	def ports(self):
+		return iter(self._ports)
 
 	def createVolume(self, type, mountpoint):
 		return self._filesystem.createVolume(type, mountpoint)

@@ -23,11 +23,20 @@ class NodeVolumeResource(NodeResource):
 	schema = [
 		StringAttributeSchema('mountpoint'),
 		StringAttributeSchema('fstype'),
+		StringAttributeSchema('host_path', 'host-path'),
+	]
+
+class NodePortResource(NodeResource):
+	schema = [
+		StringAttributeSchema('protocol'),
+		IntegerAttributeSchema('internal_port', 'internal-port'),
+		IntegerAttributeSchema('external_port', 'external-port'),
 	]
 
 class NodeApplicationResources(Configurable):
 	schema = [
 		DictNodeSchema('_volumes', 'volume', itemClass = NodeVolumeResource),
+		DictNodeSchema('_ports', 'port', itemClass = NodePortResource),
 	]
 
 class NodeContainerStatus(Configurable):
