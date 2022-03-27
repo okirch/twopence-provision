@@ -211,6 +211,11 @@ class GenericInstance(PeristentTestInstance):
 				res = self.application_resources._ports.create(port.resource_id)
 				port.asResource(res)
 
+		if self.config.platform and self.config.platform.isApplication:
+			resources = self.config.platform.application_resources
+			if resources:
+				self.application_resources.configure(resources)
+
 	def addVolumeResource(self, id, mountpoint):
 		volumeResource = self.application_resources._volumes.create(id)
 		volumeResource.mountpoint = mountpoint

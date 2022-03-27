@@ -37,6 +37,8 @@ class NodeApplicationResources(Configurable):
 	schema = [
 		DictNodeSchema('_volumes', 'volume', itemClass = NodeVolumeResource),
 		DictNodeSchema('_ports', 'port', itemClass = NodePortResource),
+		DictNodeSchema('_files', 'file', itemClass = ConfigOpaque),
+		DictNodeSchema('_directories', 'directory', itemClass = ConfigOpaque),
 	]
 
 class NodeContainerStatus(Configurable):

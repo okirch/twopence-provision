@@ -1284,6 +1284,7 @@ class Application(Platform):
 
 	schema = Platform.schema + [
 		StringAttributeSchema('id'),
+		SingleNodeSchema('application_resources', 'application-resources', itemClass = ConfigOpaque),
 	]
 
 	def __init__(self, name):
