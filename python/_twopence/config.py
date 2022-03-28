@@ -1284,6 +1284,7 @@ class Application(Platform):
 
 	schema = Platform.schema + [
 		StringAttributeSchema('id'),
+		StringAttributeSchema('application_class', 'application-class'),
 		SingleNodeSchema('application_resources', 'application-resources', itemClass = ConfigOpaque),
 	]
 
