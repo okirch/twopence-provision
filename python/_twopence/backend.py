@@ -6,7 +6,7 @@
 #
 ##################################################################
 
-from .config import Configurable
+from .config import Configurable, ConfigError
 
 class Backend(Configurable):
 	def __init__(self):

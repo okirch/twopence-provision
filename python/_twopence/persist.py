@@ -43,6 +43,7 @@ class NodeApplicationResources(Configurable):
 
 class NodeContainerStatus(Configurable):
 	schema = [
+		StringAttributeSchema('backend'),
 		StringAttributeSchema('name'),
 		StringAttributeSchema('id'),
 		IntegerAttributeSchema('pid'),

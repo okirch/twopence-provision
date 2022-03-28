@@ -13,6 +13,7 @@ from .backend import Backend
 from .runner import Runner
 from .network import *
 from .config import *
+from .persist import NodeContainerStatus
 
 from .oci import ImageFormatDockerRegistry, ImageReference, ImageConfig, ContainerStatus
 
@@ -73,3 +74,39 @@ class ContainerNodeConfig(Configurable):
 	def key(self):
 		return ImageReference(self.registry, self.image)
 
+##################################################################
+# This is a helper class that susetest uses to start/stop a
+# provisioned container
+##################################################################
+class ContainerApplicationManager:
+	def __init__(self, backend, containerInfo):
+		self.backend = backend
+		self.containerInfo = containerInfo
+
+	@property
+	def name(self):
+		return self.backend.name
+
+	def reload(self):
+		self.restart()
+
+	def restart(self):
+		container = self.containerInfo
+
+		info(f"About to restart container {container.name}")
+		twopence = self.backend.restart(container)
+		if twopence is None:
+			raise ValueError(f"failed to restart container {container.name}")
+
+		info(f"Restarted container {container.name}. New pid {container.pid}, target={twopence.target}")
+		return twopence.target
+
+##################################################################
+# ContainerBackend
+##################################################################
+class ContainerBackend(Backend):
+	def createApplicationManager(self, config):
+		containerInfo = NodeContainerStatus()
+		containerInfo.configure(config)
+
+		return ContainerApplicationManager(self, containerInfo)

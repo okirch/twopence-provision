@@ -294,7 +294,7 @@ class PodmanInstance(GenericInstance):
 
 		return self.containerId[:12]
 
-class PodmanBackend(Backend):
+class PodmanBackend(ContainerBackend):
 	name = "podman"
 
 	twopenceBuildOptions = []
@@ -619,6 +619,7 @@ exec sleep infinity
 		# persist relevant info on the container
 		containerInfo = instance.containerInfo
 
+		containerInfo.backend = 'podman'
 		containerInfo.name = instance.containerName
 		containerInfo.pid = self.findContainerPID(instance.containerName)
 		if containerInfo.pid is None:
@@ -633,6 +634,22 @@ exec sleep infinity
 			info(f"{instance.name}: started twopence service at pid {twopence.pid}, target is {twopence.target}")
 
 		return True
+
+	def restart(self, containerInfo):
+		assert(containerInfo and containerInfo.name)
+		with os.popen(f"sudo podman restart {containerInfo.name}") as f:
+			containerInfo.id = f.read().strip()
+
+		if containerInfo.id is None:
+			error("podman restart apparently failed")
+			return None
+
+		containerInfo.pid = self.findContainerPID(containerInfo.name)
+		if containerInfo.pid is None:
+			error("cannot find PID for restarted container {containerInfo.name}")
+			return None
+
+		return self.startTwopenceInContainer(containerInfo, "localhost")
 
 	def startTwopenceInContainer(self, containerInfo, hostAddress):
 		twopence = TwopenceService(containerInfo.name)
