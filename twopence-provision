@@ -45,7 +45,15 @@ class Action(BasicAction):
 
 		self._bom = None
 
-		self._auto_update_images = not args.no_auto_update_images
+		if args.update_images and args.no_update_images:
+			raise ValueError("--update-images and --no-update-images are mutually exclusive")
+
+		if args.update_images:
+			self._auto_update_images = True
+		if args.no_update_images:
+			self._auto_update_images = False
+		else:
+			self._auto_update_images = None
 
 	def error(self, msg):
 		print("Error: " + msg, file = sys.stderr)
@@ -72,8 +80,11 @@ class Action(BasicAction):
 
 	def setBackend(self, name):
 		self._backend = Backend.create(name)
-		if not self._auto_update_images:
-			self._backend.auto_update = False
+
+		# overwrite backend specific default if this was given on the command line
+		if self._auto_update_images is not None:
+			self._backend.auto_update = self._auto_update_images
+
 		return self._backend
 
 	def loadConfig(self, purpose = None):
@@ -609,8 +620,12 @@ def build_arg_parser():
 			    help = 'the directory to use as workspace')
 	parser.add_argument('--quiet', default = False, action = 'store_true',
 			    help = 'Disable most output')
-	parser.add_argument('--no-auto-update-images', default = False, action = 'store_true',
-			    help = 'Do not update base images automatically (default for eg public vagrant images)')
+
+	parser.add_argument('--update-images', default = False, action = 'store_true',
+			    help = 'Automatically update images to their latest available version (eg from vagrantcloud, or a container registry)')
+	parser.add_argument('--no-update-images', default = False, action = 'store_true',
+			    help = 'Do not update images to their latest available version')
+
 	parser.add_argument('--status',
 			    help = 'path to the file to store status info [default $workspace/status.conf]')
 	parser.add_argument('--debug', default = False, action = 'store_true',
