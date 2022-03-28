@@ -626,9 +626,20 @@ exec sleep infinity
 		# FIXME: we could also store the ID of the container process in containerInfo.id
 
 		if instance.twopence is None:
-			instance.startTwopenceInContainer(containerInfo.pid)
+			twopence = self.startTwopenceInContainer(containerInfo, instance.getHostAddress())
+			instance.twopence = twopence
+			instance.target = twopence.target
+
+			info(f"{instance.name}: started twopence service at pid {twopence.pid}, target is {twopence.target}")
 
 		return True
+
+	def startTwopenceInContainer(self, containerInfo, hostAddress):
+		twopence = TwopenceService(containerInfo.name)
+		twopence.startInContainer(containerInfo.pid, hostAddress)
+		return twopence
+
+		self.target = self.twopence.startInContainer(pid, self.getHostAddress())
 
 	def updateInstanceTarget(self, instance):
 		if instance.exists:

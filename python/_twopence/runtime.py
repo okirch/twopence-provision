@@ -75,6 +75,7 @@ class TwopenceService:
 		self.pid = None
 		self.portType = None
 		self.portName = None
+		self.target = None
 
 	@property
 	def run_dir(self):
@@ -97,6 +98,30 @@ class TwopenceService:
 	@property
 	def log_file(self):
 		return os.path.join(self.run_dir, f"{self.name}.log")
+
+	def startInContainer(self, pid, hostAddress):
+		status_file = self.status_file
+
+		cmd = f"twopence test_server --port-tcp random --daemon --container-pid {pid} --status-file {status_file}"
+
+		if True:
+			cmd += f" --log-file {self.log_file}"
+		if False:
+			cmd += " --debug"
+
+		debug(f"{self.name}: starting twopence test service: {cmd}")
+		if os.system(f"sudo {cmd}") != 0:
+			raise ValueError(f"Unable to start twopence test server in container {pid}")
+
+		self.processStatusFile()
+
+		if self.portType == 'tcp':
+			addr = hostAddress
+			self.target = f"tcp:{addr}:{self.portName}"
+		else:
+			self.target = f"{self.portType}:{self.portName}"
+
+		return self.target
 
 	def processStatusFile(self):
 		if self._status_file is None:

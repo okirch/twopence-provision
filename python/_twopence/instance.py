@@ -37,15 +37,11 @@ class GenericInstance(PeristentTestInstance):
 		self.runtime = None
 
 		self.fromNodeConfig(instanceConfig)
-		self._twopence = None
+		self.twopence = None
 
 	@property
 	def persistent(self):
 		return self._backingObject
-
-	@property
-	def twopence(self):
-		return self._twopence
 
 	@property
 	def containerInfo(self):
@@ -221,37 +217,10 @@ class GenericInstance(PeristentTestInstance):
 		volumeResource.mountpoint = mountpoint
 		return volumeResource
 
-	def startTwopenceInContainer(self, pid):
-		twopence = TwopenceService(self.containerName)
-		self._twopence = twopence
-
-		status_file = twopence.status_file
-
-		cmd = f"twopence test_server --port-tcp random --daemon --container-pid {pid} --status-file {status_file}"
-
-		if True:
-			cmd += f" --log-file {twopence.log_file}"
-		if False:
-			cmd += " --debug"
-
-		debug(f"{self.name}: starting twopence test service: {cmd}")
-		if os.system(f"sudo {cmd}") != 0:
-			raise ValueError(f"Unable to start twopence test server in container {pid}")
-
-		twopence.processStatusFile()
-
-		if twopence.portType == 'tcp':
-			addr = self.getHostAddress()
-			target = f"tcp:{addr}:{twopence.portName}"
-		else:
-			target = f"twopence.portType:{twopence.portName}"
-		info(f"{self.name}: started twopence service at pid {twopence.pid}, target is {target}")
-		self.target = target
-
 	def stopTwopence(self):
-		if self._twopence is not None:
-			self._twopence.stop()
-			self._twopence = None
+		if self.twopence is not None:
+			self.twopence.stop()
+			self.twopence = None
 
 	def saveLog(self, filename, buffer):
 		with self.openLog(filename) as f:
