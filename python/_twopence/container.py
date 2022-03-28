@@ -105,6 +105,19 @@ class ContainerApplicationManager:
 # ContainerBackend
 ##################################################################
 class ContainerBackend(Backend):
+	def queryRegistry(self, searchKey):
+		fmt = ImageFormatDockerRegistry(searchKey)
+		image = fmt.query()
+
+		if image is None:
+			raise ValueError(f"Unable to find image {searchKey}")
+
+		config = image.getConfig()
+		if config is None:
+			raise ValueError(f"Failed to load config for {searchKey}")
+
+		return config
+
 	def createApplicationManager(self, config):
 		containerInfo = NodeContainerStatus()
 		containerInfo.configure(config)

@@ -24,86 +24,6 @@ from .util import DottedNumericVersion
 
 from .oci import ImageFormatDockerRegistry, ImageReference, ImageConfig, ContainerStatus
 
-class PodmanImageInfo:
-	def __init__(self, registry, names, version = None):
-		self._registry = registry
-		self.names = names
-		if version:
-			self._version = DottedNumericVersion(version)
-		else:
-			self._version = 'latest'
-#		self.origin = origin or self.ORIGIN_LOCAL
-
-	@property
-	def version(self):
-		return str(self._version)
-
-	@property
-	def registry(self):
-		return self._registry or "local"
-
-	@property
-	def islocal(self):
-		return self._registry is None
-
-	@version.setter
-	def version(self, value):
-		self._version = DottedNumericVersion(value)
-
-	def __str__(self):
-		if self.names:
-			name = self.names[0]
-		else:
-			name = "unknown"
-		return f"image {name}:{self.version}, origin {self.registry}"
-
-	# practically the same, except for the version
-	def similar(self, other):
-		if not isinstance(other, self.__class__):
-			return False
-
-		if not set(self.names).intersection(set(other.names)):
-			return False
-
-		if self.registry == other.registry:
-			return True
-
-		# A local and a remote image always match
-#		if self.islocal or other.islocal:
-#			return True
-
-		return False
-
-	def __eq__(self, other):
-		if not self.similar(other):
-			return False
-		return self._version == other._version
-
-	def __lt__(self, other):
-		if not self.similar(other):
-			return False
-		return self._version < other._version
-
-	def __le__(self, other):
-		if not self.similar(other):
-			return False
-		return self._version <= other._version
-
-	@staticmethod
-	def queryRegistry(searchKey):
-		fmt = ImageFormatDockerRegistry(searchKey)
-		image = fmt.query()
-
-		if image is None:
-			raise ValueError(f"Unable to find image {searchKey}")
-
-		config = image.getConfig()
-		if config is None:
-			raise ValueError(f"Failed to load config for {searchKey}")
-
-		return config
-		# return PodmanImageInfo(searchKey.registry, [image.name], config.imageVersion)
-
 class ContainerRuntimeNetwork:
 	def __init__(self, id):
 		self.id = id
@@ -394,7 +314,7 @@ class PodmanBackend(ContainerBackend):
 			debug(f"Using local image {have}")
 			return have
 
-		available = PodmanImageInfo.queryRegistry(searchKey)
+		available = self.queryRegistry(searchKey)
 		if not available:
 			warn(f"{searchKey}: registry does not know about this image")
 			info(f"Using local image {have}")
