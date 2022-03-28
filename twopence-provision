@@ -11,6 +11,7 @@ import sys
 import os
 import twopence
 
+from twopence import ConfigError
 from twopence.provision import *
 from twopence.provision.persist import TopologyStatus
 

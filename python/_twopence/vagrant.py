@@ -11,12 +11,13 @@ import shutil
 import copy
 import time
 
+from twopence import ConfigError
 from .logging import *
 from .backend import Backend
 from .runner import Runner
 from .instance import *
 from .provision import *
-from .config import Config, Configurable, ConfigError, Schema
+from .config import Config, Configurable, Schema
 from .util import DottedNumericVersion
 
 VagrantRebootBlock = '''

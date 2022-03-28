@@ -14,11 +14,9 @@ import shutil
 import copy
 import twopence
 
+from twopence import ConfigError
 from .logging import *
 from .provision import ProvisioningScriptCollection, ProvisioningShellEnvironment, ProvisioningFile
-
-class ConfigError(Exception):
-	pass
 
 ##################################################################
 # Some of the stuff here is rather generic, ie not directly related

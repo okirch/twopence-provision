@@ -10,7 +10,7 @@ from .logging import *
 from .manifest import BOM
 from .backend import Backend
 from .topology import TestTopology
-from .config import Config, ConfigError, RequirementsManager
+from .config import Config, RequirementsManager
 
 def __buildDummyConfig():
 	import twopence

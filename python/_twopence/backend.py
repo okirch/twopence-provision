@@ -6,7 +6,8 @@
 #
 ##################################################################
 
-from .config import Configurable, ConfigError
+from twopence import ConfigError
+from .config import Configurable
 
 class Backend(Configurable):
 	def __init__(self):

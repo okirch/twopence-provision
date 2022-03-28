@@ -11,7 +11,8 @@ import curly
 import os
 import time
 
-from .config import ConfigError, Config
+from twopence import ConfigError
+from .config import Config
 from .instance import *
 from .logging import *
 from .persist import PersistentTestTopology

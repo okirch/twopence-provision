@@ -11,6 +11,7 @@ import time
 
 from .logging import *
 from .config import *
+from twopence import ConfigError
 
 ##################################################################
 # This represents a loop device that can be mounted as a

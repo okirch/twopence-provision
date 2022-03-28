@@ -11,6 +11,7 @@ from .network import *
 from .persist import PeristentTestInstance
 from .runtime import LoopDevice, TwopenceService, RuntimeFilesystem, RuntimePorts
 
+from twopence import ConfigError
 import time
 import os
 import shutil

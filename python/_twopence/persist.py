@@ -11,6 +11,7 @@ import susetest
 import curly
 import os
 import time
+from twopence import ConfigError
 
 from .logging import *
 from .config import *

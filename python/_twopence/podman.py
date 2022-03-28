@@ -19,8 +19,9 @@ from .runtime import *
 from .provision import *
 from .network import *
 from .container import *
-from .config import Config, Configurable, ConfigError, Schema
+from .config import Config, Configurable, Schema
 from .util import DottedNumericVersion
+from twopence import ConfigError
 
 from .oci import ImageFormatDockerRegistry, ImageReference, ImageConfig, ContainerStatus
 
