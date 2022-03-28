@@ -10,6 +10,7 @@ from .logging import *
 from .manifest import BOM
 from .backend import Backend
 from .topology import TestTopology
+from .persist import TopologyStatus
 from .config import Config, RequirementsManager
 
 def __buildDummyConfig():
@@ -55,3 +56,6 @@ def locateApplicationsForOS(application, os, backend, architecture = None):
 
 def createBackend(name):
 	return Backend.create(name or 'vagrant')
+
+def loadPersistent(path):
+	return TopologyStatus(path)

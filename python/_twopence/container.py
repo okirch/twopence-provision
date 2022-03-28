@@ -118,8 +118,5 @@ class ContainerBackend(Backend):
 
 		return config
 
-	def createApplicationManager(self, config):
-		containerInfo = NodeContainerStatus()
-		containerInfo.configure(config)
-
+	def createApplicationManager(self, containerInfo):
 		return ContainerApplicationManager(self, containerInfo)

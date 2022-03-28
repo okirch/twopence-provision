@@ -34,13 +34,41 @@ class NodePortResource(NodeResource):
 		IntegerAttributeSchema('external_port', 'external-port'),
 	]
 
+class NodeFileResource(NodeResource):
+	schema = [
+		StringAttributeSchema('volume'),
+		StringAttributeSchema('path'),
+	]
+
+class NodeDirectoryResource(NodeResource):
+	schema = [
+		StringAttributeSchema('volume'),
+		StringAttributeSchema('path'),
+	]
+
 class NodeApplicationResources(Configurable):
 	schema = [
 		DictNodeSchema('_volumes', 'volume', itemClass = NodeVolumeResource),
 		DictNodeSchema('_ports', 'port', itemClass = NodePortResource),
-		DictNodeSchema('_files', 'file', itemClass = ConfigOpaque),
-		DictNodeSchema('_directories', 'directory', itemClass = ConfigOpaque),
+		DictNodeSchema('_files', 'file', itemClass = NodeFileResource),
+		DictNodeSchema('_directories', 'directory', itemClass = NodeDirectoryResource),
 	]
+
+	@property
+	def volumes(self):
+		return self._volumes.values()
+
+	@property
+	def ports(self):
+		return self._ports.values()
+
+	@property
+	def files(self):
+		return self._files.values()
+
+	@property
+	def directories(self):
+		return self._directories.values()
 
 class NodeContainerStatus(Configurable):
 	schema = [
@@ -55,7 +83,9 @@ class NodeStatus(NamedConfigurable):
 
 	schema = [
 		StringAttributeSchema('ipv4_address'),
+		StringAttributeSchema('ipv4_address_external'),
 		StringAttributeSchema('ipv6_address'),
+		StringAttributeSchema('ipv6_address_external'),
 		ListAttributeSchema('features'),
 		ListAttributeSchema('resources'),
 		StringAttributeSchema('vendor'),
@@ -140,6 +170,10 @@ class TopologyStatus(Configurable):
 		try:
 			del self._suts[node.name]
 		except: pass
+
+	@property
+	def parameters(self):
+		return self._parameters.items()
 
 	def save(self):
 		if not self.path:
