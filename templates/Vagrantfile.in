@@ -50,6 +50,8 @@ Vagrant.configure("2") do |config|
 
   config.vm.provider :libvirt do |domain|
     domain.memory = 2048
+    # Apparently, this needs a version of vagrant-libvirt more recent than what's running on my machine
+    # domain.serial :type => "file", :source => {:path => "@WORKSPACE@/libvirt.log"}
   end
 
 @VAGRANT_PROVISION_STAGES@

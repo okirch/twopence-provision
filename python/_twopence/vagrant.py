@@ -381,6 +381,7 @@ class VagrantBackend(Backend):
 		extraData["VAGRANT_PROVISION_STAGES"] = "\n".join(provisioning)
 
 		extraData["VAGRANT_MACHINE_CONFIG"] = self.buildMachineConfig(instance.config)
+		extraData["WORKSPACE"] = instance.workspace
 
 		vagrantNode = instance.config.vagrant
 
