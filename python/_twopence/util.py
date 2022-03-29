@@ -12,8 +12,6 @@ import sys
 import os
 import time
 
-opt_verbose = 1
-
 class ProgressBar:
 	def __init__(self, message):
 		self.message = message

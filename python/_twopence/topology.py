@@ -163,7 +163,7 @@ class TestTopology(PersistentTestTopology):
 					raise ValueRrror("Instance %s already running" % instance.name)
 				continue
 
-			if verbose_enabled():
+			if verbose.enabled:
 				verbose("  Image %s, SSH keyfile %s" % (instance.config.image, instance.config.keyfile))
 				if instance.config.install:
 					verbose("  Installing package(s):")
