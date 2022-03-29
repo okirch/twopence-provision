@@ -137,7 +137,7 @@ class NodeStatus(NamedConfigurable):
 
 	def requestManagementApplication(self, app):
 		if app.name in self._application_managers:
-			info(f"{self.name}: request for application {app} already satisfied")
+			debug(f"{self.name}: request for application {app} already satisfied")
 			return
 		self._application_managers.add(app)
 
