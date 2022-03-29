@@ -315,6 +315,10 @@ class PodmanBackend(ContainerBackend):
 			debug(f"Using local image {have}")
 			return have
 
+		if not self.auto_update:
+			debug(f"{searchKey}: we have {have.imageVersion}, and auto-updating is tured off. Use what we have")
+			return have
+
 		available = self.queryRegistry(searchKey)
 		if not available:
 			warn(f"{searchKey}: registry does not know about this image")
@@ -325,7 +329,7 @@ class PodmanBackend(ContainerBackend):
 			debug(f"Latest version for {searchKey} is {have.imageVersion}; already present")
 			return have
 
-		debug(f"{searchKey}: our version is outdated (ours={have.imageVersion}, available={available.imageVersion}")
+		debug(f"{searchKey}: our version is outdated (ours={have.imageVersion}, available={available.imageVersion})")
 		return None
 
 	def downloadImage(self, instance):
