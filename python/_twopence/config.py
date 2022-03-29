@@ -381,6 +381,19 @@ class ShellAction(Action):
 		action.script = "preamble"
 		return action
 
+class ApplicationRequest(NamedConfigurable):
+	info_attrs = ["name", "class_id", "module"]
+	schema = [
+		StringAttributeSchema('class_id', 'class-id'),
+		StringAttributeSchema('module', 'module'),
+	]
+
+	def __init__(self, name, className = None, moduleName = None):
+		super().__init__(name)
+
+		self.class_id = className
+		self.module = moduleName
+
 class Platform(NamedConfigurable):
 	info_attrs = ['name', 'image', 'vendor', 'os', 'imagesets', 'requires',
 			'repositories',
@@ -405,6 +418,7 @@ class Platform(NamedConfigurable):
 		ListAttributeSchema('_active_repositories', 'active-repositories'),
 		ListAttributeSchema('_applied_stages', 'applied-stages'),
 		SetAttributeSchema('_applied_build_options', 'applied-build-options'),
+		DictNodeSchema('_application_managers', 'application-manager', itemClass = ApplicationRequest),
 
 		DictNodeSchema('repositories', 'repository', itemClass = Repository),
 		DictNodeSchema('imagesets', 'imageset', itemClass = Imageset),
@@ -453,6 +467,10 @@ class Platform(NamedConfigurable):
 	@property
 	def isApplication(self):
 		return False
+
+	@property
+	def application_managers(self):
+		return self._application_managers.values()
 
 	##########################################################
 	# The remaining methods and properties are for newly
@@ -602,7 +620,12 @@ class Role(NamedConfigurable):
 		ListAttributeSchema('start'),
 		SetAttributeSchema('features'),
 		ListAttributeSchema('build'),
+		DictNodeSchema('_application_managers', 'application-manager', itemClass = ApplicationRequest),
 	]
+
+	@property
+	def application_managers(self):
+		return self._application_managers.values()
 
 class Node(NamedConfigurable):
 	info_attrs = ["name", "role", "platform", "build"]
@@ -615,11 +638,16 @@ class Node(NamedConfigurable):
 		ListAttributeSchema('install'),
 		ListAttributeSchema('start'),
 		DictNodeSchema("_backends", "backend", itemClass = ConfigOpaque),
+		DictNodeSchema('_application_managers', 'application-manager', itemClass = ApplicationRequest),
 	]
 
 	@property
 	def role(self):
 		return self._role or self.name
+
+	@property
+	def application_managers(self):
+		return self._application_managers.values()
 
 class Build(Platform):
 	info_attrs = Platform.info_attrs + ['base_platform']
@@ -656,7 +684,6 @@ class Application(Platform):
 
 	schema = Platform.schema + [
 		StringAttributeSchema('id'),
-		StringAttributeSchema('application_class', 'application-class'),
 		SingleNodeSchema('application_resources', 'application-resources', itemClass = ConfigOpaque),
 	]
 
@@ -685,6 +712,7 @@ class EmptyNodeConfig:
 		self._shellActions = {}
 		self._provisioning = None
 		self.requestedBuildOptions = []
+		self.requestedManagementApplications = []
 
 	# FIXME: unused?
 	@property
@@ -731,6 +759,9 @@ class EmptyNodeConfig:
 		self.start += role.start
 		self.features.update(role.features)
 		self.requestedBuildOptions += role.build
+
+		for app in role.application_managers:
+			self.requestedManagementApplications.append(app)
 
 	def configureBackend(self, backendName, backendNode):
 		config = self.platform.backends.get(backendName)
@@ -858,6 +889,9 @@ class FinalNodeConfig(EmptyNodeConfig):
 
 		self.requestedBuildOptions += self.platform._always_build
 		self.requestedBuildOptions += node.build
+
+		for app in node.application_managers:
+			self.requestedManagementApplications.append(app)
 
 		for role in roles:
 			self.fromRole(role)

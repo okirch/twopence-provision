@@ -100,6 +100,7 @@ class NodeStatus(NamedConfigurable):
 		DictNodeSchema('_loop_devices', 'loop-device', itemClass = LoopDevice),
 		SingleNodeSchema('application_resources', 'application-resources', itemClass = NodeApplicationResources),
 		SingleNodeSchema('_container', 'container', itemClass = NodeContainerStatus),
+		DictNodeSchema('_application_managers', 'application-manager', itemClass = ApplicationRequest),
 	]
 
 	def __init__(self, name, config = None):
@@ -129,6 +130,16 @@ class NodeStatus(NamedConfigurable):
 		if self._container is None:
 			self._container = NodeContainerStatus()
 		return self._container
+
+	@property
+	def application_managers(self):
+		return self._application_managers.values()
+
+	def requestManagementApplication(self, app):
+		if app.name in self._application_managers:
+			info(f"{self.name}: request for application {app} already satisfied")
+			return
+		self._application_managers.add(app)
 
 class TopologyStatus(Configurable):
 	info_attrs = ['testcase']
@@ -222,11 +233,18 @@ class PeristentTestInstance(ConfigFacade):
 		if platform:
 			self.vendor = platform.vendor
 			self.os = platform.os
-			if platform.isApplication:
-				self.application = platform.id
-				self.application_class = platform.application_class
 
-		# This is a bit complicated, but the reason is this
+			# An application or platform definition may specify a certain
+			# management API. Copy these to status.conf
+			for app in platform.application_managers:
+				self._backingObject.requestManagementApplication(app)
+
+		# The test case may specify management APIs as well, in testcase.conf.
+		# Copy these as well - but with lower precedence.
+		for app in instanceConfig.requestedManagementApplications:
+			self._backingObject.requestManagementApplication(app)
+
+		# This is a bit complicated, but the reason is this:
 		# For every stage of twopence-provision, we have to reload
 		# the configuration (obviously, because we're a new process).
 		# This means that the FinalNodeConfig will also reconstruct the
