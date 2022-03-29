@@ -67,7 +67,7 @@ class TestTopology(PersistentTestTopology):
 			self.createInstanceConfig(node, config)
 
 		if config.parameters:
-			self.parameters.update(config.parameters)
+			self._parameters.update(config.parameters)
 
 		config.configureBackend(self.backend)
 
