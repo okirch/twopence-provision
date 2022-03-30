@@ -55,6 +55,10 @@ class VagrantBoxInfo:
 	def version(self, value):
 		self._version = DottedNumericVersion(value)
 
+	@property
+	def isLocal(self):
+		return self.origin == self.ORIGIN_LOCAL
+
 	def __str__(self):
 		return "vagrant image %s/%s (origin %s)" % (self.name, self.version, self.origin)
 
@@ -70,8 +74,7 @@ class VagrantBoxInfo:
 			return True
 
 		# A local and a remote image always match
-		if self.origin == self.ORIGIN_LOCAL or \
-		   other.origin == self.ORIGIN_LOCAL:
+		if self.isLocal or other.isLocal:
 			return True
 
 		return False
@@ -345,9 +348,13 @@ class VagrantBackend(Backend):
 				debug("No need to download %s; already present" % want)
 				return None
 
-			if not self.auto_update:
+			# rules for auto-updating:
+			#  - if the image is a local build, always pull in the latest version we built
+			#  - if the auto_update is off, just use what we have (if we have anything)
+			#  - else, pull the latest version
+			if not self.auto_update and not want.isLocal:
 				if have is not None:
-					debug("We have %s; latest version is %s (not updating)" % (have, want))
+					debug(f"We have {have}; latest version is {want} (not updating)")
 					return None
 
 			if want:
