@@ -16,6 +16,7 @@ import twopence
 
 from twopence import ConfigError
 from twopence.schema import *
+from twopence.testbase import ApplicationRequest
 from .logging import *
 from .provision import ProvisioningScriptCollection, ProvisioningShellEnvironment, ProvisioningFile
 
@@ -380,19 +381,6 @@ class ShellAction(Action):
 		action = ShellAction("preamble")
 		action.script = "preamble"
 		return action
-
-class ApplicationRequest(NamedConfigurable):
-	info_attrs = ["name", "class_id", "module"]
-	schema = [
-		StringAttributeSchema('class_id', 'class-id'),
-		StringAttributeSchema('module', 'module'),
-	]
-
-	def __init__(self, name, className = None, moduleName = None):
-		super().__init__(name)
-
-		self.class_id = className
-		self.module = moduleName
 
 class Platform(NamedConfigurable):
 	info_attrs = ['name', 'image', 'vendor', 'os', 'imagesets', 'requires',
