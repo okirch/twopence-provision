@@ -233,6 +233,7 @@ class PeristentTestInstance(ConfigFacade):
 		if platform:
 			self.vendor = platform.vendor
 			self.os = platform.os
+			self.keyfile = platform.keyfile
 
 			# An application or platform definition may specify a certain
 			# management API. Copy these to status.conf
