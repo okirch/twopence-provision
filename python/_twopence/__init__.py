@@ -29,7 +29,7 @@ def __buildDummyConfig():
 def getPlatform(platformName):
 	config = __buildDummyConfig()
 
-	return config.getPlatform(platformName)
+	return config.platformCatalog.platformByName(platformName)
 
 def queryPlatformFeatures(platformName):
 	platform = getPlatform(platformName)
