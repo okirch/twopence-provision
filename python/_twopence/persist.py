@@ -213,7 +213,7 @@ class PersistentTestTopology(ConfigFacade):
 	def __init__(self, path):
 		super().__init__(path)
 
-class PeristentTestInstance(ConfigFacade):
+class PersistentTestInstance(ConfigFacade):
 	facadedClass = NodeStatus
 
 	def __init__(self, backingObject):
