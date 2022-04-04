@@ -213,7 +213,7 @@ class PersistentTestTopology(ConfigFacade):
 	def __init__(self, path):
 		super().__init__(path)
 
-class PeristentTestInstance(ConfigFacade):
+class PersistentTestInstance(ConfigFacade):
 	facadedClass = NodeStatus
 
 	def __init__(self, backingObject):
@@ -233,6 +233,7 @@ class PeristentTestInstance(ConfigFacade):
 		if platform:
 			self.vendor = platform.vendor
 			self.os = platform.os
+			self.keyfile = platform.keyfile
 
 			# An application or platform definition may specify a certain
 			# management API. Copy these to status.conf

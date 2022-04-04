@@ -8,7 +8,7 @@
 
 from .logging import *
 from .network import *
-from .persist import PeristentTestInstance
+from .persist import PersistentTestInstance
 from .runtime import LoopDevice, TwopenceService, RuntimeFilesystem, RuntimePorts
 
 from twopence import ConfigError
@@ -20,7 +20,7 @@ import shutil
 # Generic functionality for node instances (eg VMs)
 # Backends derive from this base class
 ##################################################################
-class GenericInstance(PeristentTestInstance):
+class GenericInstance(PersistentTestInstance):
 	supportedVolumeTypes = {}
 
 	def __init__(self, backend, instanceConfig, workspace = None, persistentState = None):
